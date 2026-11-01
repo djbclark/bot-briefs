@@ -1,0 +1,58 @@
+<div class="item-row {% if item.parent_display_id %}item-sub{% endif %} {% if item.status == 'resolved' %}item-resolved{% endif %}" id="item-row-{{ item.id }}" data-item-id="{{ item.id }}">
+  <div class="row-main">
+    <span class="row-id">#{{ item.display_id or item.id }}</span>
+    <a href="/i/{{ item.id }}" class="row-title" title="{{ item.title }}">{{ item.title }}</a>
+    {% if item.body_md %}
+      <details class="row-detail">
+        <summary class="row-snippet" title="Toggle details">{{ item.body_md|truncate(60) }}</summary>
+        <div class="row-expanded-detail markdown-body">{{ item.body_md|md }}</div>
+      </details>
+    {% endif %}
+    {% if item.links %}
+      <span class="row-links">
+        {% for l in item.links %}
+          <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener" class="row-link-icon" title="{{ l.label or l.url }}">🔗</a>
+        {% endfor %}
+      </span>
+    {% endif %}
+    {% if item.priority %}
+      <span class="badge badge-prio">P{{ item.priority }}</span>
+    {% endif %}
+    {% if 'NEW' in (item.flags_list or item.flags or '') %}
+      <span class="badge badge-new">NEW</span>
+    {% endif %}
+    {% if item.due_at %}
+      <span class="badge badge-due">Due {{ item.due_at }}</span>
+    {% endif %}
+    {% if item.queued_text %}
+      <span class="badge badge-queued" title="{{ item.queued_text }}">queued: {{ item.queued_text|truncate(25) }}</span>
+    {% endif %}
+  </div>
+
+  <div class="row-actions">
+    <div class="icon-actions" hx-target="#item-row-{{ item.id }}" hx-swap="outerHTML">
+      <button type="button" class="icon-btn icon-btn-done" title="Done" aria-label="Done" hx-post="/i/{{ item.id }}/action" hx-vals='{"type":"done","from_row":"1"}'>✓</button>
+      <button type="button" class="icon-btn icon-btn-dismiss" title="Dismiss" aria-label="Dismiss" hx-post="/i/{{ item.id }}/action" hx-vals='{"type":"dismiss","from_row":"1"}'>✕</button>
+      <details class="snooze-dropdown">
+        <summary class="icon-btn icon-btn-snooze" title="Snooze" aria-label="Snooze">⏰</summary>
+        <div class="snooze-menu">
+          {% for u in ['1d', '3d', '1w'] %}<button type="button" class="snooze-opt-btn" hx-post="/i/{{ item.id }}/action" hx-vals='{"type":"snooze","from_row":"1","until":"{{ u }}"}'>{{ u }}</button>{% endfor %}
+          <form hx-post="/i/{{ item.id }}/action" class="snooze-custom-form">
+            <input type="hidden" name="type" value="snooze"><input type="hidden" name="from_row" value="1">
+            <input type="date" name="until" required class="snooze-date-picker">
+            <button type="submit" class="btn btn-sm">Set</button>
+          </form>
+        </div>
+      </details>
+      <button type="button" class="icon-btn" title="Priority up" aria-label="Priority up" hx-post="/i/{{ item.id }}/action" hx-vals='{"type":"priority","delta":"-1","from_row":"1"}'>▲</button>
+      <button type="button" class="icon-btn" title="Priority down" aria-label="Priority down" hx-post="/i/{{ item.id }}/action" hx-vals='{"type":"priority","delta":"1","from_row":"1"}'>▼</button>
+    </div>
+
+    <!-- Reply Text Box & Buttons -->
+    <div class="reply-group">
+      <textarea name="text" rows="1" class="reply-input" placeholder="Reply…" data-item-id="{{ item.id }}"></textarea>
+      <button type="button" class="btn btn-sm btn-send" hx-post="/i/{{ item.id }}/send" hx-include="#item-row-{{ item.id }} textarea" hx-target="#item-row-{{ item.id }}" hx-swap="outerHTML">Send</button>
+      <button type="button" class="btn btn-sm btn-queue" hx-post="/i/{{ item.id }}/queue" hx-include="#item-row-{{ item.id }} textarea" hx-target="#item-row-{{ item.id }}" hx-swap="outerHTML">Queue</button>
+    </div>
+  </div>
+</div>

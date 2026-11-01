@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# repo-sync: nightly, non-destructive sync of the box's GitHub/forgejo clones.
+# Never resets, cleans, stashes, rebases or pushes. Only fast-forwards.
+# Snapshots uncommitted work to ~/repo-sync-backups before touching anything.
+# Prints a machine-readable report; exit 0 even when repos need attention.
+set -uo pipefail
+ROOTS=(${REPO_SYNC_ROOTS:-$HOME/src /workspace $HOME/.hermes})
+BK="$HOME/repo-sync-backups/$(date +%Y-%m-%d_%H%M)"
+SMOKE="$HOME/.config/repo-sync/smoke.d"
+TEST_TIMEOUT="${REPO_SYNC_TEST_TIMEOUT:-900}"
+# Tests run ONLY for repos listed here (repos you own). One entry per line: an absolute repo
+# path or an origin URL substring such as "github.com/<you>/<repo>". '#' comments allowed.
+# Missing/empty file = no tests run. Third-party clones are fetched/fast-forwarded but their
+# upstream test code is never executed (a compromised upstream commit must not run here).
+TEST_ALLOWLIST="${REPO_SYNC_TEST_ALLOWLIST:-$HOME/.config/repo-sync/test-allowlist}"
+export GIT_TERMINAL_PROMPT=0
+
+gitr() { # git with the right one-off auth for this repo's origin
+  local d="$1"; shift
+  local url; url=$(git -C "$d" remote get-url origin 2>/dev/null)
+  if [[ "$url" == *forgejo.mit.edu* ]]; then
+    (cd "$d" && "$HOME/.local/bin/git-forgejo" "$@")
+  elif [[ "$url" == *github.com* ]] && [ -z "$(git -C "$d" config --local credential.helper)" ]; then
+    git -C "$d" -c credential.helper= \
+      -c 'credential.helper=!f(){ [ "$1" = get ] && { echo username=x-access-token; echo "password=$GH_TOKEN"; }; }; f' "$@"
+  else
+    git -C "$d" "$@"
+  fi
+}
+
+test_allowed() { # $1 repo dir, $2 origin url
+  [ -r "$TEST_ALLOWLIST" ] || return 1
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"; line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
+    [ -z "$line" ] && continue
+    if [[ "$line" == /* ]]; then [ "$line" = "$1" ] && return 0
+    else [[ "$2" == *"$line"* ]] && return 0; fi
+  done < "$TEST_ALLOWLIST"
+  return 1
+}
+
+run_tests() { # $1 repo dir, $2 origin url; prints "pass|fail|none|skipped <cmd>"
+  local d="$1" name; name=$(basename "$d")
+  test_allowed "$d" "$2" || { echo "skipped (not in $TEST_ALLOWLIST)"; return; }
+  local cmd=""
+  if [ -x "$SMOKE/$name.sh" ]; then cmd="$SMOKE/$name.sh"
+  elif [ -f "$d/justfile" ] && just --justfile "$d/justfile" --summary 2>/dev/null | tr ' ' '\n' | grep -qx test; then cmd="just test"
+  elif [ -f "$d/Makefile" ] && grep -qE '^(test|check):' "$d/Makefile"; then cmd="make $(grep -oE '^(test|check):' "$d/Makefile" | head -1 | tr -d :)"
+  elif [ -f "$d/package.json" ] && command -v jq >/dev/null && jq -e '.scripts.test' "$d/package.json" >/dev/null 2>&1; then cmd="npm test --silent"
+  elif [ -f "$d/pyproject.toml" ] && [ -d "$d/tests" ] && command -v pytest >/dev/null; then cmd="pytest -q"
+  elif [ -f "$d/go.mod" ]; then cmd="go test ./..."
+  elif [ -f "$d/Cargo.toml" ]; then cmd="cargo test -q"
+  fi
+  [ -z "$cmd" ] && { echo "none"; return; }
+  local log="$BK/$name.test.log"; mkdir -p "$BK"
+  # Minimal env: no tokens or other box secrets reach test code.
+  if (cd "$d" && env -i PATH="$PATH" HOME="$HOME" LANG="${LANG:-C.UTF-8}" TERM=dumb \
+        timeout "$TEST_TIMEOUT" bash -c "$cmd") >"$log" 2>&1; then echo "pass $cmd"; else echo "fail $cmd (log $log)"; fi
+}
+
+mapfile -t REPOS < <(for r in "${ROOTS[@]}"; do find "$r" -maxdepth 3 -type d -name .git -not -path '*/node_modules/*' 2>/dev/null; done | xargs -r -n1 dirname | sort -u)
+
+for d in "${REPOS[@]}"; do
+  name=$(basename "$d"); url=$(git -C "$d" remote get-url origin 2>/dev/null | sed -E 's#https://[^@/]*@#https://#')
+  echo "=== REPO $d"
+  echo "origin: ${url:-NONE}"
+  if [ -z "$url" ] || ! [[ "$url" =~ github.com|forgejo.mit.edu ]]; then echo "status: NO_KNOWN_REMOTE"; continue; fi
+
+  # 1. snapshot uncommitted work (tracked diffs + untracked files), never modify it
+  dirty=$(git -C "$d" status --porcelain=v1 --untracked-files=all | grep -v '^!!' || true)
+  if [ -n "$dirty" ]; then
+    mkdir -p "$BK/$name"
+    git -C "$d" diff --binary HEAD > "$BK/$name/uncommitted.patch" 2>/dev/null
+    git -C "$d" ls-files -z --others --exclude-standard | (cd "$d" && tar --null -T - -czf "$BK/$name/untracked.tgz" 2>/dev/null)
+    echo "$dirty" > "$BK/$name/status.txt"
+    echo "dirty: $(echo "$dirty" | wc -l) files (snapshot $BK/$name)"
+  else echo "dirty: no"; fi
+
+  # 2. fetch
+  if ! out=$(gitr "$d" fetch --prune --tags origin 2>&1); then echo "status: FETCH_FAILED $(echo "$out" | tail -2 | tr '\n' ' ')"; continue; fi
+
+  cur=$(git -C "$d" symbolic-ref --short -q HEAD || echo DETACHED)
+  before=$(git -C "$d" rev-parse HEAD)
+  changed=0
+  # 3. every local branch
+  while read -r br up; do
+    if [ -z "$up" ]; then
+      if git -C "$d" rev-parse -q --verify "refs/remotes/origin/$br" >/dev/null; then up="origin/$br"; note=" (no upstream set; compared to origin/$br)"; else echo "branch $br: LOCAL_ONLY (never pushed)"; continue; fi
+    else note=""; fi
+    git -C "$d" rev-parse -q --verify "$up" >/dev/null || { echo "branch $br: UPSTREAM_GONE $up"; continue; }
+    read -r ahead behind < <(git -C "$d" rev-list --left-right --count "$br...$up")
+    if [ "$ahead" = 0 ] && [ "$behind" = 0 ]; then echo "branch $br: UP_TO_DATE$note"
+    elif [ "$ahead" != 0 ] && [ "$behind" != 0 ]; then echo "branch $br: DIVERGED ahead=$ahead behind=$behind vs $up$note — NEEDS MERGE"
+    elif [ "$ahead" != 0 ]; then echo "branch $br: AHEAD by $ahead vs $up$note — NEEDS PUSH"
+    else
+      if [ "$br" = "$cur" ]; then
+        if o=$(git -C "$d" merge --ff-only "$up" 2>&1); then echo "branch $br: FAST_FORWARDED $behind commits$note"; changed=1
+        else echo "branch $br: BEHIND by $behind, ff blocked (local uncommitted changes overlap) — NEEDS ATTENTION: $(echo "$o" | head -3 | tr '\n' ' ')"; fi
+      else
+        if git -C "$d" fetch -q . "$up:$br" 2>/dev/null; then echo "branch $br: FAST_FORWARDED $behind commits (not checked out)$note"; else echo "branch $br: BEHIND by $behind, could not ff"; fi
+      fi
+    fi
+  done < <(git -C "$d" for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads)
+
+  after=$(git -C "$d" rev-parse HEAD)
+  if [ "$changed" = 1 ] && [ "$before" != "$after" ]; then
+    echo "updated: $before..$after"
+    git -C "$d" log --oneline "$before..$after" | head -15 | sed 's/^/  commit /'
+    echo "tests: $(run_tests "$d" "$url")"
+  else echo "updated: no"; fi
+done
+echo "=== BACKUPS $BK"
+# prune snapshots older than 60 days
+find "$HOME/repo-sync-backups" -mindepth 1 -maxdepth 1 -type d -mtime +60 -exec rm -rf {} + 2>/dev/null
+exit 0

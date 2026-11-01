@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Now a shim: tailscaled + Mac MCP forwarder are supervised by monit (see /home/box/agent-data/shared/watchdogs.md).
+/home/box/agent-data/shared/watchdogs/bin/watchdog-ensure
+if [ "${1:-}" = "--wait" ]; then
+  for _ in $(seq 1 60); do curl -s -m 2 -o /dev/null http://127.0.0.1:18800/__fwd_health && exit 0; sleep 1; done
+  echo "mac-mcp-ensure: forwarder not healthy after 60s" >&2; exit 1
+fi

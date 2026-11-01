@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}{{ item.title }} · Timeline{% endblock %}
+
+{% block content %}
+<div class="item-view">
+  <div style="margin-bottom: 16px;">
+    <a href="/b/{{ item.bot_slug }}" style="font-size: 0.85rem; color: var(--text-muted);">
+      ← Back to {{ item.bot_name }}
+    </a>
+    <h1 style="font-size: 1.3rem; font-weight: 700; margin-top: 6px;">{{ item.title }}</h1>
+  </div>
+
+  <div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+      <div class="card-title">
+        <span>Item Details</span>
+        <span class="badge {% if item.status == 'resolved' %}badge-resolved{% else %}badge-new{% endif %}">
+          {{ item.status }}
+        </span>
+      </div>
+      <div class="card-meta">
+        <span>First seen: {{ item.first_seen }}</span> ·
+        <span>Last seen: {{ item.last_seen }}</span>
+      </div>
+    </div>
+    <div class="card-body" style="padding: 10px 14px;">
+      <p style="font-size: 0.85rem; color: var(--text-muted); font-family: monospace; word-break: break-all;">
+        <strong>Key:</strong> {{ item.item_key }}
+      </p>
+      {% if item.due_at %}
+        <p style="font-size: 0.85rem; margin-top: 4px;">
+          <strong>Due:</strong> <span class="badge badge-due">{{ item.due_at }}</span>
+        </p>
+      {% endif %}
+      {% if item.links %}
+        <div style="margin-top: 8px;">
+          <strong>Source Links:</strong>
+          <div class="item-links" style="margin-top: 4px;">
+            {% for l in item.links %}
+              <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener">🔗 {{ l.label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Inline Action Row Card -->
+  <div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+      <div class="card-title">
+        <span>Item Actions</span>
+      </div>
+    </div>
+    <div class="card-body" style="padding: 6px 10px;">
+      {% include "partials/item_row.html" %}
+    </div>
+  </div>
+
+  <!-- Action History Card -->
+  {% if actions %}
+    <div class="card" style="margin-bottom: 16px;">
+      <div class="card-header">
+        <div class="card-title">
+          <span>Action History ({{ actions|length }})</span>
+        </div>
+      </div>
+      <div class="card-body" style="padding: 8px 12px;">
+        <div class="action-history-list">
+          {% for act in actions %}
+            <div class="action-history-item" style="padding: 6px 10px; background: var(--surface-alt); border-radius: 6px; margin-bottom: 6px; font-size: 0.85rem;">
+              <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px;">
+                <div>
+                  <strong>{{ act.type }}</strong>
+                  {% if act.type == 'reply' and act.payload.text %}
+                    <span style="color: var(--text-muted);">"{{ act.payload.text }}"</span>
+                  {% elif act.type == 'snooze' and act.payload.until %}
+                    <span>until {{ act.payload.until }}</span>
+                  {% elif act.type == 'priority' and act.payload.delta is defined %}
+                    <span>({{ '↑ more important' if act.payload.delta < 0 else '↓ less important' }})</span>
+                  {% endif %}
+                </div>
+                <span style="color: var(--text-muted); font-size: 0.75rem;">{{ act.created_at[:16].replace('T', ' ') }} ET</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 0.75rem; flex-wrap: wrap;">
+                <span class="badge badge-status badge-{{ act.status }}">{{ act.status }}</span>
+                {% if act.rank is not none %}
+                  <span class="badge badge-rank">rank #{{ act.rank }}</span>
+                {% endif %}
+                {% if act.wake_status %}
+                  <span style="color: var(--text-muted);">{{ act.wake_status }}</span>
+                {% endif %}
+                {% if act.bot_note %}
+                  <div style="color: var(--text); width: 100%;"><strong>Bot note:</strong> {{ act.bot_note }}</div>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <h2 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 10px;">Daily Appearances ({{ item.timeline|length }})</h2>
+
+  <div class="timeline">
+    {% for app in item.timeline %}
+      <div class="timeline-entry" style="margin-bottom: 12px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);">
+        <div class="timeline-meta" style="display: flex; justify-content: space-between; align-items: baseline;">
+          <div>
+            <strong>{{ app.report_date }}</strong> ·
+            <a href="/r/{{ app.report_id }}">{{ app.report_title }}</a>
+            <span style="font-family: monospace; font-weight: 600; margin-left: 6px;">#{{ app.display_id }}</span>
+          </div>
+          <div>
+            {% for f in app.flags_list %}
+              {% if f == 'NEW' %}
+                <span class="badge badge-new">NEW</span>
+              {% elif f == 'updated' %}
+                <span class="badge badge-updated">updated</span>
+              {% elif f == 'resolved' %}
+                <span class="badge badge-resolved">resolved</span>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        <div class="markdown-body" style="font-size: 0.85rem; margin-top: 6px;">
+          {{ app.body_html|safe }}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

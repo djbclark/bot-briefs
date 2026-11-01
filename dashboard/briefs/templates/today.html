@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Today · Bot Briefs{% endblock %}
+
+{% block content %}
+<div class="main-layout">
+  {% if not dispatch_configured %}
+    <div class="dispatch-warning-banner">
+      Processing trigger not configured yet; submitted items will be picked up on the bots' next runs
+    </div>
+  {% endif %}
+
+  <!-- In Progress Container -->
+  {% include "partials/in_progress.html" %}
+
+  <!-- Filter Bar -->
+  <form id="filter-form"
+        hx-get="/"
+        hx-trigger="change"
+        hx-target="#item-list"
+        hx-swap="outerHTML"
+        hx-push-url="true"
+        autocomplete="off"
+        class="filter-bar">
+    <div class="filter-group">
+      <label for="filter-bot">Bot:</label>
+      <select name="bot" id="filter-bot" class="filter-select">
+        <option value="">All bots</option>
+        {% for b in all_bots %}
+          <option value="{{ b.cli_name }}" data-slug="{{ b.slug }}" {% if filter_bot == b.cli_name or filter_bot == b.slug or filter_bot == b.name %}selected{% endif %}>{{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label for="filter-area">Area:</label>
+      <select name="area" id="filter-area" class="filter-select">
+        <option value="">All areas</option>
+        {% for a in distinct_areas %}
+          <option value="{{ a }}" {% if filter_area == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label for="filter-status">Status:</label>
+      <select name="status" id="filter-status" class="filter-select">
+        <option value="open" {% if filter_status == 'open' %}selected{% endif %}>open</option>
+        <option value="snoozed" {% if filter_status == 'snoozed' %}selected{% endif %}>snoozed</option>
+        <option value="closed" {% if filter_status == 'closed' %}selected{% endif %}>closed</option>
+        <option value="all" {% if filter_status == 'all' %}selected{% endif %}>all</option>
+      </select>
+    </div>
+
+    <div class="filter-group filter-checkbox">
+      <label>
+        <input type="checkbox" name="new" value="true" {% if filter_new %}checked{% endif %}>
+        NEW only
+      </label>
+    </div>
+
+    <div class="filter-group filter-checkbox">
+      <label>
+        <input type="checkbox" name="due" value="true" {% if filter_due %}checked{% endif %}>
+        Has due date
+      </label>
+    </div>
+  </form>
+
+  <!-- Items List Container -->
+  {% include "partials/today_cards.html" %}
+</div>
+{% endblock %}

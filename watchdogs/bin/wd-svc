@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# wd-svc start|stop NAME — start/stop a watched service (called by monit).
+# start enforces exponential backoff: after a restart, the next is allowed only after
+# 30s * 2^(n-1) (cap 15 min), n = starts in the last 30 min. Refusals are logged.
+export PATH=/home/box/.local/bin:/usr/local/bin:/usr/bin:/bin
+set -u
+ACT=$1; NAME=$2
+ST=/home/box/.local/state/watchdogs; LOG=$ST/watchdog.log; mkdir -p "$ST"
+log() { echo "$(date '+%F %T %Z') [$NAME] $*" >> "$LOG"; }
+TS_DIR=/home/box/.local/share/tailscale; TS_SOCK=$TS_DIR/tailscaled.sock
+bg() { setsid nohup "$@" < /dev/null & }
+
+do_start() {
+  case $NAME in
+    tailscaled) TS_DROP_NOISE_ON_TIME_JUMP=1 bg /home/box/.local/bin/tailscaled --tun=userspace-networking --socks5-server=localhost:1055 \
+        --outbound-http-proxy-listen=localhost:1056 --statedir=$TS_DIR --socket=$TS_SOCK >> $TS_DIR/tailscaled.log 2>&1 ;;
+    mac-mcp-forwarder) D=/home/box/.local/share/mac-mcp-forwarder; mkdir -p $D; chmod 700 $D
+        (umask 077; bg python3 /home/box/.local/bin/mac-mcp-forwarder.py >> $D/forwarder.log 2>&1) ;;
+    dashboard) D=/home/box/agent-data/shared/dashboard; mkdir -p $D/logs; cd $D &&
+        bg $D/.venv/bin/python -m uvicorn briefs.web:app --host 127.0.0.1 --port 8642 >> $D/logs/server.log 2>&1 ;;
+    briefs-mirror) D=/home/box/agent-data/shared/dashboard; mkdir -p /home/box/.local/share/briefs-mirror; cd $D &&
+        PYTHONPATH=$D bg $D/.venv/bin/python -m briefs.mirror run >> /home/box/.local/share/briefs-mirror/daemon.log 2>&1 ;;
+    beeper-server) beeper targets start server -y >> /home/box/.beeper/logs/keepalive.log 2>&1 ;;
+    risk-watch) risk-watch start >/dev/null 2>&1 ;;
+    guest-sshd) sudo -n mkdir -p /run/sshd && sudo -n /usr/sbin/sshd -f /etc/ssh/sshd_guest.conf >> "$LOG" 2>&1 ;;
+    guardian) bg /home/box/agent-data/shared/watchdogs/bin/watchdog-guardian >/dev/null 2>&1 ;;
+    *) log "unknown service"; exit 2 ;;
+  esac
+}
+do_stop() {
+  case $NAME in
+    tailscaled) pkill -u box -f "tailscaled .*--socket=$TS_SOCK" ;;
+    mac-mcp-forwarder) pkill -u box -f mac-mcp-forwarder.py ;;
+    dashboard) pkill -u box -f "uvicorn briefs.web:app" ;;
+    briefs-mirror) pkill -u box -f "briefs.mirror run" ;;
+    beeper-server) beeper targets stop server -y >/dev/null 2>&1; pkill -u box -f "beeper-server --host=127.0.0.1 --port=23374" ;;
+    risk-watch) risk-watch stop >/dev/null 2>&1 ;;
+    guest-sshd) sudo -n pkill -f '^sshd: /usr/sbin/sshd -f /etc/ssh/sshd_guest.conf' ;;
+    guardian) pkill -u box -f watchdog-guardian ;;
+  esac
+  sleep 2
+  # escalate for wedged (e.g. SIGSTOPped) processes
+  case $NAME in
+    tailscaled) pkill -9 -u box -f "tailscaled .*--socket=$TS_SOCK" ;;
+    mac-mcp-forwarder) pkill -9 -u box -f mac-mcp-forwarder.py ;;
+    dashboard) pkill -9 -u box -f "uvicorn briefs.web:app" ;;
+    briefs-mirror) pkill -9 -u box -f "briefs.mirror run" ;;
+    beeper-server) pkill -9 -u box -f "beeper-server --host=127.0.0.1 --port=23374" ;;
+  esac
+  return 0
+}
+case $ACT in
+  start)
+    H=$ST/$NAME.starts; now=$(date +%s); touch "$H"
+    awk -v c=$((now-1800)) '$1>c' "$H" > "$H.tmp"; mv "$H.tmp" "$H"
+    n=$(wc -l < "$H"); last=$(tail -1 "$H" 2>/dev/null || echo 0)
+    if [ "$n" -gt 0 ]; then
+      wait=$((30 * (1 << (n-1)))); [ $wait -gt 900 ] && wait=900
+      if [ $((now - ${last:-0})) -lt $wait ]; then
+        log "start deferred (backoff: $n starts in 30 min, next allowed in $((wait-(now-last)))s)"; exit 1
+      fi
+    fi
+    echo "$now" >> "$H"; log "START (attempt $((n+1)) in 30 min)"; do_start ;;
+  stop) log "STOP"; do_stop ;;
+  restart) "$0" stop "$NAME"; exec "$0" start "$NAME" ;;
+esac

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Now a shim: the dashboard is supervised by monit (see /home/box/agent-data/shared/watchdogs.md).
+exec /home/box/agent-data/shared/watchdogs/bin/watchdog-ensure

@@ -1,0 +1,54 @@
+check process tailscaled matching "tailscaled .*--socket=/home/box/.local/share/tailscale/tailscaled.sock"
+    start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start tailscaled" with timeout 30 seconds
+    stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop tailscaled"
+    if failed host 127.0.0.1 port 1055 type tcp for 3 cycles then restart
+
+check program tailscale-health with path "/home/box/agent-data/shared/watchdogs/bin/wd-ts-health" with timeout 90 seconds
+    every 2 cycles
+    if status != 0 then exec "/home/box/agent-data/shared/watchdogs/bin/wd-svc restart tailscaled"
+    depends on tailscaled
+
+check process mac-mcp-forwarder matching "mac-mcp-forwarder.py"
+    start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start mac-mcp-forwarder"
+    stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop mac-mcp-forwarder"
+    if failed host 127.0.0.1 port 18800 protocol http request "/__fwd_health" timeout 5 seconds for 2 cycles then restart
+
+check process dashboard matching "uvicorn briefs.web:app"
+    start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start dashboard" with timeout 20 seconds
+    stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop dashboard"
+    if failed host 127.0.0.1 port 8642 protocol http request "/healthz" timeout 5 seconds for 2 cycles then restart
+
+check program dashboard-url with path "/home/box/agent-data/shared/watchdogs/bin/wd-dashboard-url" with timeout 60 seconds
+    every 2 cycles
+    if status != 0 then alert
+    depends on dashboard
+
+check program dashboard-tasks with path "/home/box/agent-data/shared/watchdogs/bin/wd-dashboard-tasks" with timeout 60 seconds
+    every 10 cycles
+    if status != 0 then alert
+
+check process beeper-server matching "beeper-server --host=127.0.0.1 --port=23374"
+    start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start beeper-server" with timeout 90 seconds
+    stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop beeper-server"
+    if failed host 127.0.0.1 port 23374 protocol http request "/v1/info" timeout 10 seconds for 3 cycles then restart
+
+check process risk-watch matching "risk-watch loop"
+    start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start risk-watch"
+    stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop risk-watch"
+
+check process guest-sshd matching "sshd -f /etc/ssh/sshd_guest.conf"
+    start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start guest-sshd"
+    stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop guest-sshd"
+    if failed host 127.0.0.1 port 2222 type tcp for 2 cycles then restart
+
+check process cline-hub matching "cline-hub-daemon"
+    # started on demand by the cline CLI; monitored only (no start program)
+    if failed host 127.0.0.1 port 25463 type tcp for 3 cycles then alert
+
+check process watchdog-guardian matching "watchdog-guardian"
+    start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start guardian"
+    stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop guardian"
+
+check program saner with path "/home/box/agent-data/shared/watchdogs/bin/wd-saner" with timeout 120 seconds
+    every 10 cycles
+    if status != 0 then alert

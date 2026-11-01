@@ -1,0 +1,193 @@
+#!/var/lib/briefs/venv/bin/python
+"""VPS stand-in for the box's `notify-bot` (set as BRIEFS_NOTIFY_CMD on the VPS dashboard).
+
+The dashboard calls it exactly like notify-bot:  notify-bot-vps chief-of-staff -f dashboard -m none -s "Dashboard submit" "3 actions submitted"
+  --list     prints "chief-of-staff configured=yes|no" (the dashboard uses this to decide whether it can wake CoS)
+  -n         dry run: print the payload and which settings would be used; sends nothing
+  --retry    (timer, every minute) resend wakes that failed earlier, with exponential backoff, newest only
+
+Behaviour: wait up to 14 s for the box to pull the just-submitted actions (so CoS finds them in `brief actions`),
+POST the webhook once; on failure spool it under /var/lib/briefs/wake-spool and exit 75 (the actions themselves are
+already safely stored in the VPS DB). Secrets live in /var/lib/briefs/secrets/webhook.env (mode 600); never printed.
+"""
+import json, os, re, sqlite3, sys, time, urllib.request, urllib.error, urllib.parse
+from datetime import datetime, timezone
+
+BASE = os.environ.get("BRIEFS_VPS_HOME", "/var/lib/briefs")
+ENVF = os.environ.get("BRIEFS_WEBHOOK_ENV", f"{BASE}/secrets/webhook.env")
+SPOOL = f"{BASE}/wake-spool"
+DB = os.environ.get("BRIEFS_DB", f"{BASE}/data/briefs.db")
+LOG = f"{BASE}/logs/wake.log"
+BOT = "chief-of-staff"
+VAR = "AGENT_WEBHOOK_CHIEF_OF_STAFF"
+
+
+def log(msg):
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write(f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} {msg}\n")
+
+
+def load_env():
+    env = dict(os.environ)
+    try:
+        for line in open(ENVF):
+            m = re.match(r"\s*(?:export\s+)?([A-Z0-9_]+)=(.*)$", line.rstrip("\n"))
+            if m:
+                v = m.group(2)
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                    v = v[1:-1]
+                env.setdefault(m.group(1), v)
+    except OSError:
+        pass
+    return env
+
+
+def settings(env):
+    url, key, hdr = env.get(f"{VAR}_URL", ""), env.get(f"{VAR}_KEY", ""), env.get(f"{VAR}_HEADER", "")
+    return url, key, hdr
+
+
+def post(env, payload, timeout=10):
+    url, key, hdr = settings(env)
+    if not url or not (key or hdr):
+        raise RuntimeError("webhook not configured")
+    h = hdr if hdr else f"Authorization: Bearer {key}"
+    name, _, val = h.partition(":")
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST",
+                                 headers={name.strip(): val.strip(), "Content-Type": "application/json",
+                                          "User-Agent": "briefs-vps-wake/1"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.status
+
+
+def wait_for_box_pull(max_s=14):
+    """Give the box a few seconds to fetch the new actions so CoS finds them when it wakes."""
+    end = time.time() + max_s
+    while time.time() < end:
+        try:
+            c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=3)
+            n = c.execute("SELECT COUNT(*) FROM sync_origin WHERE dirty=1").fetchone()[0]
+            c.close()
+            if n == 0:
+                return True
+        except sqlite3.Error:
+            return False
+        time.sleep(2)
+    return False
+
+
+def spool(payload, attempts=0):
+    os.makedirs(SPOOL, mode=0o700, exist_ok=True)
+    delay = min(60 * 2 ** attempts, 1800)
+    name = f"{SPOOL}/{int(time.time()*1000)}.json"
+    with open(name, "w") as f:
+        json.dump({"payload": payload, "attempts": attempts, "next_try": time.time() + delay,
+                   "first": time.time()}, f)
+    os.chmod(name, 0o600)
+
+
+def retry():
+    env = load_env()
+    files = sorted(f for f in os.listdir(SPOOL) if f.endswith(".json")) if os.path.isdir(SPOOL) else []
+    if not files:
+        return 0
+    items = []
+    for f in files:
+        try:
+            items.append((f, json.load(open(f"{SPOOL}/{f}"))))
+        except Exception:
+            os.unlink(f"{SPOOL}/{f}")
+    if not items:
+        return 0
+    f, d = items[-1]  # coalesce: CoS reads every submitted action, so one wake covers all
+    if time.time() < d["next_try"]:
+        return 0
+    if time.time() - d["first"] > 86400:
+        log("giving up on spooled wake older than 24h")
+        for ff, _ in items:
+            os.unlink(f"{SPOOL}/{ff}")
+        return 0
+    try:
+        st = post(env, d["payload"])
+        ok = 200 <= st < 300
+    except Exception as e:
+        ok = False
+        log(f"retry {d['attempts']+1} failed: {type(e).__name__}")
+    if ok:
+        log(f"retry sent after {d['attempts']+1} attempt(s); cleared {len(items)} spooled wake(s)")
+        for ff, _ in items:
+            os.unlink(f"{SPOOL}/{ff}")
+        try:  # the UI showed 'dispatch failed (exit 75)'; fix the label now that it went out
+            c = sqlite3.connect(DB, timeout=10)
+            with c:
+                c.execute("UPDATE actions SET wake_status='dispatch sent (retry)' WHERE wake_status='dispatch failed (exit 75)'")
+            c.close()
+        except sqlite3.Error:
+            pass
+        return 0
+    for ff, _ in items[:-1]:
+        os.unlink(f"{SPOOL}/{ff}")
+    d["attempts"] += 1
+    d["next_try"] = time.time() + min(60 * 2 ** d["attempts"], 1800)
+    json.dump(d, open(f"{SPOOL}/{f}", "w"))
+    return 1
+
+
+def main(argv):
+    env = load_env()
+    url, key, hdr = settings(env)
+    configured = bool(url and (key or hdr))
+    if argv and argv[0] == "--list":
+        print(f"{BOT} configured={'yes' if configured else 'no'}")
+        return 0
+    if argv and argv[0] == "--retry":
+        return retry()
+    dry = False
+    args = list(argv)
+    if "-n" in args:
+        dry = True
+        args.remove("-n")
+    if not args or args[0] != BOT:
+        print(f"notify-bot-vps: only '{BOT}' is supported", file=sys.stderr)
+        return 2
+    frm, model, subj, reply, rest, i = "unknown-agent", "", "", False, [], 1
+    while i < len(args):
+        a = args[i]
+        if a in ("-f", "-m", "-s") and i + 1 < len(args):
+            if a == "-f": frm = args[i + 1]
+            elif a == "-m": model = args[i + 1]
+            else: subj = args[i + 1]
+            i += 2
+        elif a == "-r":
+            reply = True; i += 1
+        else:
+            rest.append(a); i += 1
+    payload = {"to": BOT, "from": frm, "model": model, "subject": subj, "message": " ".join(rest),
+               "reply_wanted": reply, "cwd": os.getcwd(),
+               "sent_at": datetime.now().astimezone().isoformat(timespec="seconds")}
+    if dry:
+        host = urllib.parse.urlsplit(url).netloc or "MISSING"
+        print(json.dumps(payload))
+        print(f"dry-run: host={host} configured={'yes' if configured else 'no'} key=<redacted>")
+        return 0 if configured else 3
+    if not configured:
+        log("webhook not configured")
+        return 3
+    pulled = wait_for_box_pull()
+    try:
+        st = post(env, payload)
+        if 200 <= st < 300:
+            log(f"wake sent (http {st}, box_pulled={pulled}): {payload['message']}")
+            return 0
+        log(f"wake failed http {st}")
+    except urllib.error.HTTPError as e:
+        log(f"wake failed http {e.code}")
+    except Exception as e:
+        log(f"wake failed {type(e).__name__}")
+    spool(payload)
+    return 75
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

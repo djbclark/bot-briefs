@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Idempotent boot/shell hook: make sure monit and its guardian are running.
+RC=/home/box/.config/monit/monitrc; mkdir -p /home/box/.local/state/watchdogs
+monit -c $RC status >/dev/null 2>&1 || monit -c $RC >/dev/null 2>&1
+flock -n /home/box/.local/state/watchdogs/guardian.lock true 2>/dev/null && \
+  setsid nohup /home/box/agent-data/shared/watchdogs/bin/watchdog-guardian >/dev/null 2>&1 < /dev/null &
+# eve-drop-watch: no-model watcher for the second user's drop folder (added 2026-10-25); flock inside the script keeps it single.
+setsid nohup /home/box/agent-data/shared/watchdogs/bin/eve-drop-watch >/dev/null 2>&1 < /dev/null &
+exit 0

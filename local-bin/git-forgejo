@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# box version of djbclark-ade git-forgejo: token via GIT_ASKPASS only, credential.helper cleared, URLs token-free
+set -uo pipefail; . "/home/box/.local/share/forgejo-box/scripts/_env"
+export FORGEJO_GIT_TOKEN="${!VAR}" GIT_ASKPASS="/home/box/.local/libexec/forgejo/git-askpass" GIT_TERMINAL_PROMPT=0
+exec git -c credential.helper= "$@"

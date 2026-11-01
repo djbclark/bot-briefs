@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ chunk.title }} · Cleanup{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/cleanup.css">{% endblock %}
+{% block content %}
+<div class="cl-page" id="cl-chunk">
+  <div class="cl-bar" role="region" aria-label="Progress">
+    <a href="/cleanup/" class="cl-back" aria-label="All sittings">←</a>
+    <span class="cl-bar-title">{{ pos }}/{{ n_chunks }} · {{ chunk.title }}</span>
+    <progress id="cl-progress" max="{{ chunk.stacks|length }}" value="0" aria-label="Senders decided"></progress>
+    <span id="cl-progress-text" class="cl-progress-text" aria-live="polite">0 / {{ chunk.stacks|length }}</span>
+    <button type="button" class="cl-btn" id="cl-resume">Resume</button>
+  </div>
+
+  <p class="cl-lead">{{ chunk.emails }} emails from {{ chunk.stacks|length }} senders · ~{{ chunk.minutes|round(1) }} min. Pick one action per sender; open a sender to override single emails (Keep / Archive / Delete). Choices save in this browser as you go. Unsubscribe applies to the whole source.</p>
+
+  {% for s in chunk.stacks %}
+  {% set sid = "s" ~ loop.index0 %}
+  <section class="cl-stack{% if s.covered %} is-covered{% endif %}{% if s.flag %} is-flagged{% endif %} kind-{{ s.kind }}" data-sid="{{ s.id }}" data-sender="{{ s.sender }}" data-default="{{ s.default }}" id="{{ sid }}">
+    <h3 class="cl-stack-h">
+      <button type="button" class="cl-title" aria-expanded="false" aria-controls="{{ sid }}-emails">
+        <span class="cl-name">{{ s.name or s.sender }}</span>
+        <span class="cl-sender">{{ s.sender }}</span>
+        <span class="cl-count">{{ s.count }} email{{ '' if s.count == 1 else 's' }}</span>
+      </button>
+    </h3>
+    <div class="cl-badges">
+      {% if s.flag %}<span class="cl-badge warn">{{ s.flag }}</span>{% endif %}
+      {% if s.covered %}<span class="cl-badge rule">Already covered by rule {{ s.covered|join(', ') }}</span>{% elif s.partly_covered %}<span class="cl-badge">Partly covered by {{ s.partly_covered|join(', ') }}</span>{% endif %}
+      {% if s.sensitive %}<span class="cl-badge sensitive" title="{{ s.sensitive }}">Sensitive · {{ s.sensitive }}</span>{% endif %}
+      {% if s.kind == 'money' %}<span class="cl-badge money">Money</span>{% elif s.kind == 'protected' %}<span class="cl-badge keep">Protected</span>{% endif %}
+      {% if s.unsub and s.unsub.one_click %}<span class="cl-badge">One-click unsub</span>{% endif %}
+      <span class="cl-badge srcunsub" hidden>Unsubscribe chosen for this source</span>
+    </div>
+    {% if s.note %}<p class="cl-note">{{ s.note }}</p>{% endif %}
+    <fieldset class="cl-radios">
+      <legend class="visually-hidden">Action for {{ s.name or s.sender }}</legend>
+      {% for a in order if a in s.allowed %}
+      <label class="cl-radio act-{{ a }}" title="{{ helps[a] }}"><input type="radio" name="{{ sid }}" value="{{ a }}"{% if a == s.default %} checked{% endif %}><span>{{ labels[a] }}</span></label>
+      {% endfor %}
+    </fieldset>
+    <p class="cl-downgrade" role="status" aria-live="polite" hidden></p>
+    <ul class="cl-emails" id="{{ sid }}-emails" hidden>
+      {% for it in s['items'] %}
+      <li class="cl-email" data-tid="{{ it.tid }}">
+        <div class="cl-email-text"><span class="cl-date">{{ it.date }}</span> <span class="cl-subj">{{ it.subject or '(no subject)' }}</span>{% if it.n > 1 %} <span class="cl-n">×{{ it.n }}</span>{% endif %}{% if it.rule %} <span class="cl-badge rule">{{ it.rule }}</span>{% endif %}
+          <div class="cl-snip">{{ (it.snippet or '')|replace('\u034f','')|truncate(140) }}</div></div>
+        <fieldset class="cl-eradios"><legend class="visually-hidden">This email</legend>
+          <label><input type="radio" name="{{ sid }}-{{ loop.index0 }}" value="" checked><span>As sender</span></label>
+          <label><input type="radio" name="{{ sid }}-{{ loop.index0 }}" value="keep"><span>Keep</span></label>
+          <label><input type="radio" name="{{ sid }}-{{ loop.index0 }}" value="archive"><span>Archive</span></label>
+          {% if s.kind == 'normal' %}<label><input type="radio" name="{{ sid }}-{{ loop.index0 }}" value="delete"><span>Delete</span></label>{% endif %}
+        </fieldset>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+
+  <div class="cl-actions">
+    <button type="button" class="cl-btn" id="cl-accept">Accept defaults for the rest</button>
+    <button type="button" class="cl-btn primary" id="cl-review">Review &amp; submit…</button>
+    <button type="button" class="cl-btn" id="cl-copy">Copy for Zero</button>
+    <button type="button" class="cl-btn" id="cl-download">Download plan.json</button>
+    {% if nxt %}<a class="cl-btn" href="/cleanup/{{ nxt }}">Next sitting →</a>{% endif %}
+  </div>
+  <p id="cl-status" class="cl-status" role="status" aria-live="polite"></p>
+  <div id="cl-copy-fallback" hidden><label for="cl-copy-text">Copy failed — select all and copy this text:</label><textarea id="cl-copy-text" rows="8" readonly></textarea></div>
+
+  <div id="cl-confirm" class="cl-confirm" hidden tabindex="-1" role="dialog" aria-labelledby="cl-confirm-h">
+    <h2 id="cl-confirm-h" class="cl-h2">Confirm this plan</h2>
+    <ol class="cl-steps">
+      <li>Archive first: <strong data-k="archive">0</strong> threads (stay unread). Left to rules: <span data-k="rule">0</span>. Kept: <span data-k="keep">0</span>.</li>
+      <li>Then, only after Zero shows you these counts again: Trash <strong data-k="trash">0</strong> threads, delete history for <strong data-k="history">0</strong> senders, unsubscribe <strong data-k="unsub">0</strong> sources (<span data-k="oneclick">0</span> one-click by Zero; the rest by hand).</li>
+    </ol>
+    <label class="cl-ack" id="cl-ack-row"><input type="checkbox" id="cl-ack"> I understand Kill/Delete/Unsub move mail to Trash or unsubscribe me.</label>
+    <div class="cl-actions">
+      <button type="button" class="cl-btn primary" id="cl-submit">Submit to Zero</button>
+      <button type="button" class="cl-btn" id="cl-cancel">Back</button>
+    </div>
+  </div>
+
+  <section id="cl-unsub" class="cl-unsub" hidden aria-labelledby="cl-unsub-h">
+    <h2 id="cl-unsub-h" class="cl-h2">Where to unsubscribe</h2>
+    <p id="cl-unsub-intro"></p>
+    <ul id="cl-unsub-list"></ul>
+  </section>
+</div>
+<script id="cl-meta" type="application/json">{{ meta|tojson }}</script>
+<script id="cl-data" type="application/json">{{ chunk.stacks|tojson }}</script>
+<script src="/static/cleanup.js"></script>
+{% endblock %}

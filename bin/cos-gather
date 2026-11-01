@@ -1,0 +1,330 @@
+#!/usr/bin/env python3
+"""cos-gather: deterministic data gathering for Chief of Staff's 04:14 ET high-priority list.
+
+Read-only against the Bot Briefs DB (sqlite uri mode=ro). Optional opencli calls for
+Saner/Shortwave (read commands only). Writes only: stdout, -o FILE, and a snapshot under
+~/.local/state/cos-gather/YYYY-MM-DD.json (skipped for --as-of / --no-state).
+See /home/box/src/one-offs/cos-gather/README.md.
+"""
+import argparse, json, os, re, sqlite3, subprocess, sys
+from datetime import datetime, date, timedelta, time as dtime
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
+DB_DEFAULT = "/home/box/agent-data/shared/dashboard/data/briefs.db"
+HEALTH = "/home/box/agent-data/shared/source-health.json"
+STATE_DIR = os.path.expanduser("~/.local/state/cos-gather")
+RUN_TIME = dtime(4, 14)
+OPENCLI_TIMEOUT = 60
+# requested name -> dashboard slug
+TARGET_BOTS = {"radar": "radar", "zero": "zero", "family": "family", "money": "money",
+               "business": "business", "chess": "chess", "pika": "pika", "friends": "friends",
+               "techno-euphora": "te", "one-offs": "oneoffs", "coding": "coding", "other": "other"}
+CLOSED = ("done", "dismissed", "resolved")
+
+WEIGHTS = {
+    "overdue": 45, "due_today": 50, "due_tomorrow": 40, "due_week": 20, "due_2weeks": 8,
+    "money": 15, "legal": 15, "waiting": 15, "failure": 15,
+    "new": 5,
+    # priority modifier: (3 - P) * this; P1 -> +20, P2 -> +10, P3/unset -> 0, P4 -> -10
+    "priority_step": 10,
+    "fyi": -15,
+}
+KW = {
+    "money": r"\binvoices?\b|\bpayments?\b|\bbills?\b|\btax(es)?\b|\boverdue\b|\bautopay\b|\brenew(al|s)?\b|\bminimum\b|\$\d[\d,.]*\b[^.;]{0,30}\b(due|owed|charge[sd]?|refund)\b",
+    "legal": r"docusign|\be-?sign|\bsignatures?\b|\bsign (the|it|and)\b|\bcontract\b|\blease\b|\bcourt\b|\battorney\b|\bnotary\b|\blegal\b",
+    "waiting": r"(still |is |are |been )waiting|unanswered|unsent draft|reply is in|draft (reply|is waiting)|review questions|questions for you|waiting on your|waiting on you|awaiting your|reply needed|needs? (a |your )?(reply|answer)|please respond|\basked\b|\basks\b|follow[ -]up|wants to know",
+    "failure": r"\bfail(ed|ing|ure)?\b|\berrors?\b|\boutage\b|\bis down\b|\bwent down\b|\bexpired\b|\bbounced\b|\bblocked\b|security alert|\bCI (is )?red\b",
+    "fyi": r"\bFYI\b|\bno action\b",
+}
+MONTHS = {m: i + 1 for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split())}
+DATE_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (\d{1,2})\b", re.I)
+
+
+def now_et():
+    return datetime.now(ET)
+
+
+def connect(path):
+    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+
+
+def text_dates(text, ref):
+    out = []
+    for m, d in DATE_RE.findall(text or ""):
+        try:
+            dt = date(ref.year, MONTHS[m[:3].lower()], int(d))
+        except ValueError:
+            continue
+        if (dt - ref).days < -180:
+            dt = dt.replace(year=ref.year + 1)
+        out.append(dt)
+    return out
+
+
+def norm_pri(p):
+    if isinstance(p, int):
+        return p
+    m = re.search(r"\d", str(p or ""))
+    return int(m.group(0)) if m else None
+
+
+def score(c, today, live=True):
+    pts, why = 0, []
+    text = f"{c['title']} {c.get('details') or ''}"
+    due = c.get("due")
+    dates = [date.fromisoformat(due[:10])] if due else []
+    # deadline words near a date in the text (conservative: only if the item says due/by/ends/last day etc.)
+    # inferred deadline: a month-day in the TITLE next to a deadline word, today or later only
+    if not dates:
+        for m in re.finditer(r"\b(due|by|deadline|ends?|last day|expires?|renews?|until|before|today|tomorrow)\b[^.;]{0,25}", c["title"] or "", re.I):
+            dates += [d for d in text_dates(m.group(0), today) if d >= today]
+        if live and not dates and re.search(r"\btoday\b", c["title"] or "", re.I) and not re.search(r"\bno longer\b|\byesterday\b", c["title"] or "", re.I):
+            dates = [today]
+    if dates:
+        d = min(dates)
+        delta = (d - today).days
+        if not due:
+            c["due_inferred"] = d.isoformat()
+        if delta < 0:
+            pts += WEIGHTS["overdue"]; why.append(f"overdue ({d}) +{WEIGHTS['overdue']}")
+        elif delta == 0:
+            pts += WEIGHTS["due_today"]; why.append(f"due today +{WEIGHTS['due_today']}")
+        elif delta == 1:
+            pts += WEIGHTS["due_tomorrow"]; why.append(f"due tomorrow +{WEIGHTS['due_tomorrow']}")
+        elif delta <= 7:
+            pts += WEIGHTS["due_week"]; why.append(f"due in {delta}d +{WEIGHTS['due_week']}")
+        elif delta <= 14:
+            pts += WEIGHTS["due_2weeks"]; why.append(f"due in {delta}d +{WEIGHTS['due_2weeks']}")
+    for k in ("money", "legal", "waiting", "failure"):
+        m = re.search(KW[k], text, re.I)
+        if m:
+            pts += WEIGHTS[k]; why.append(f"{k} ('{m.group(0)}') +{WEIGHTS[k]}")
+    if re.search(KW["fyi"], text):
+        pts += WEIGHTS["fyi"]; why.append(f"fyi {WEIGHTS['fyi']}")
+    if "NEW" in c["flags"]:
+        pts += WEIGHTS["new"]; why.append(f"new +{WEIGHTS['new']}")
+    p = c["priority"] = norm_pri(c.get("priority"))
+    mod = (3 - (p if p is not None else 3)) * WEIGHTS["priority_step"]
+    if mod:
+        pts += mod; why.append(f"priority P{p} {mod:+d}")
+    c["score"], c["score_reasons"] = pts, why
+    return c
+
+
+def gather_dashboard(conn, slugs, cutoff, live, notes):
+    """Open candidates = items attached to each bot's latest daily report created <= cutoff."""
+    cut = cutoff.isoformat()
+    day = cutoff.date().isoformat()
+    bots = {r[1]: r[0] for r in conn.execute("SELECT id, slug FROM bots")}
+    briefs, cands, missing = {}, [], []
+    for name, slug in slugs.items():
+        bid = bots.get(slug)
+        rep = None
+        if bid:
+            rep = conn.execute(
+                "SELECT id, report_date, title, body_md, created_at, updated_at, kind FROM reports "
+                "WHERE bot_id=? AND kind='daily' AND report_date<=? AND created_at<=? "
+                "ORDER BY report_date DESC, created_at DESC LIMIT 1", (bid, day, cut)).fetchone()
+        if not rep:
+            missing.append(name); continue
+        rid, rdate, title, body, created, updated, kind = rep
+        briefs[name] = {"slug": slug, "report_id": rid, "date": rdate, "title": title,
+                        "is_today": rdate == day, "created_at": created, "updated_at": updated,
+                        "excerpt": (body or "")[:400]}
+        if updated and updated > cut and not live:
+            notes.append(f"{name}: report {rdate} was updated after cutoff ({updated}); as-of view uses its current items")
+        rows = conn.execute(
+            "SELECT i.id, i.item_key, i.title, i.status, i.priority, i.due_at, i.snooze_until, i.first_seen, "
+            "i.last_seen, i.links_json, ri.display_id, ri.parent_display_id, ri.section, ri.body_md, ri.flags "
+            "FROM report_items ri JOIN items i ON i.id=ri.item_id WHERE ri.report_id=? ORDER BY ri.position", (rid,))
+        rows = rows.fetchall()
+        parents = {r[11]: None for r in rows if r[11]}
+        heads = {r[10]: r[2] for r in rows if r[10] in parents}
+        for (iid, key, t, st, pr, due, snooze, fs, ls, links, disp, parent, sec, rbody, flags) in rows:
+            fl = (flags or "").lower()
+            if "resolved" in fl or disp in parents:
+                continue
+            sec = sec or heads.get(parent)
+            if live and st in CLOSED:
+                continue
+            if snooze and snooze[:10] > day:
+                continue
+            if t and re.match(r"^about \d+ lower-priority items", t, re.I):
+                continue
+            try:
+                links = json.loads(links or "[]")
+            except ValueError:
+                links = []
+            cflags = []
+            if fs and fs >= (cutoff.date() - timedelta(days=1)).isoformat() and fs[:10] == rdate:
+                cflags.append("NEW")
+            if "new" in fl and "NEW" not in cflags:
+                cflags.append("NEW")
+            cands.append({"bot": name, "id": iid, "key": key, "title": t, "details": (rbody or "")[:600] or None,
+                          "links": links, "due": due[:10] if due else None, "priority": pr,
+                          "first_seen": fs, "last_seen": ls, "flags": cflags, "status": st,
+                          "source": "dashboard", "display_id": disp, "parent": parent, "section": sec})
+    return briefs, cands, missing
+
+
+def run_opencli(args):
+    try:
+        p = subprocess.run(["opencli", *args, "-f", "json"], capture_output=True, text=True, timeout=OPENCLI_TIMEOUT)
+    except FileNotFoundError:
+        return None, "opencli not found"
+    except subprocess.TimeoutExpired:
+        return None, f"timeout after {OPENCLI_TIMEOUT}s"
+    try:
+        data = json.loads(p.stdout or "null")
+    except ValueError:
+        data = None
+    if p.returncode != 0 or (isinstance(data, dict) and data.get("ok") is False):
+        err = data.get("error", {}) if isinstance(data, dict) else {}
+        msg = err.get("code", "") + ": " + err.get("message", "") if err else (p.stderr or p.stdout)[-300:]
+        return None, f"exit {p.returncode} {msg}".strip()
+    if isinstance(data, dict):
+        data = data.get("data") or data.get("items") or data.get("rows") or []
+    return data if isinstance(data, list) else [], None
+
+
+def gather_external(sources, cands, today):
+    try:
+        health = json.load(open(HEALTH))
+    except (OSError, ValueError):
+        health = {}
+    specs = {"saner": ["saner", "tasks", "--status", "open"], "shortwave": ["shortwave", "todos"]}
+    for name, args in specs.items():
+        h = health.get(name, {})
+        hnote = f"health file: ok={h.get('ok')} last_run={h.get('last_run')} consecutive_failures={h.get('consecutive_failures')}"
+        if h.get("both_routes_failed"):
+            sources[name] = {"status": "skipped_unhealthy", "detail": hnote, "count": 0}
+            continue
+        rows, err = run_opencli(args)
+        if err:
+            sources[name] = {"status": "error", "detail": f"{err}; {hnote}", "count": 0}
+            continue
+        n = 0
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            if name == "saner":
+                if r.get("done") in (True, "true", 1):
+                    continue
+                title = r.get("content") or ""
+                pr = r.get("priority")
+                pr = pr if isinstance(pr, int) else None
+                c = {"bot": "saner", "id": r.get("id"), "key": f"saner:{r.get('id')}", "title": title,
+                     "details": None, "links": [], "due": (str(r.get("due"))[:10] if r.get("due") else None),
+                     "priority": pr}
+            else:
+                title = r.get("title") or ""
+                link = r.get("link")
+                c = {"bot": "shortwave", "id": None, "key": f"shortwave:{link or title}", "title": title,
+                     "details": f"date={r.get('date')} count={r.get('count')}", "links": [{"label": "Shortwave", "url": link}] if link else [],
+                     "due": None, "priority": None}
+            if c["due"] and not re.match(r"\d{4}-\d\d-\d\d", c["due"]):
+                c["due"] = None
+            c.update({"first_seen": None, "last_seen": None, "flags": [], "source": name, "parent": None, "section": None})
+            cands.append(c); n += 1
+        sources[name] = {"status": "ok", "detail": hnote, "count": n}
+
+
+def load_prev(conn, slugs, prev_cutoff, today):
+    p = os.path.join(STATE_DIR, f"{(today - timedelta(days=1)).isoformat()}.json")
+    if os.path.exists(p):
+        try:
+            return {(c["bot"], c["key"]): c for c in json.load(open(p))["candidates"] if c["source"] == "dashboard"}, "state file " + p
+        except (OSError, ValueError, KeyError):
+            pass
+    _, c, _ = gather_dashboard(conn, slugs, prev_cutoff, False, [])
+    return {(x["bot"], x["key"]): x for x in c}, "reconstructed from DB (as-of yesterday 04:14 ET)"
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--date"); ap.add_argument("--as-of"); ap.add_argument("-o")
+    ap.add_argument("--no-opencli", action="store_true"); ap.add_argument("--no-state", action="store_true")
+    ap.add_argument("--bots"); ap.add_argument("--explain", action="store_true")
+    ap.add_argument("--top", type=int, default=0, help="keep only top N candidates (0=all)")
+    ap.add_argument("--selftest", action="store_true")
+    a = ap.parse_args(argv)
+    if a.selftest:
+        import unittest
+        sys.path.insert(0, "/home/box/src/one-offs/cos-gather")
+        import test_cos_gather
+        r = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromModule(test_cos_gather))
+        return 0 if r.wasSuccessful() else 1
+    live = not (a.as_of or a.date)
+    if a.as_of:
+        cutoff = datetime.fromisoformat(a.as_of)
+        cutoff = cutoff.replace(tzinfo=ET) if cutoff.tzinfo is None else cutoff.astimezone(ET)
+    elif a.date:
+        cutoff = datetime.combine(date.fromisoformat(a.date), RUN_TIME, ET)
+    else:
+        cutoff = now_et()
+    today = cutoff.date()
+    slugs = TARGET_BOTS
+    if a.bots:
+        want = [b.strip() for b in a.bots.split(",") if b.strip()]
+        slugs = {k: v for k, v in TARGET_BOTS.items() if k in want or v in want}
+    conn = connect(os.environ.get("BRIEFS_DB", DB_DEFAULT))
+    notes = []
+    if not live:
+        notes.append("backtest mode: item status (done/dismissed) has no timestamps, so current closed status is NOT applied; snooze/resolved flags are")
+    briefs, cands, missing = gather_dashboard(conn, slugs, cutoff, live, notes)
+    sources = {"dashboard": {"status": "ok", "detail": "sqlite read-only", "count": len(cands)}}
+    if a.no_opencli or not live:
+        for s in ("saner", "shortwave"):
+            sources[s] = {"status": "skipped", "detail": "--no-opencli or backtest", "count": 0}
+    else:
+        gather_external(sources, cands, today)
+    for c in cands:
+        score(c, today, live)
+    cands.sort(key=lambda c: (-c["score"], c["priority"] if c["priority"] is not None else 3, c["bot"], str(c["key"])))
+    for i, c in enumerate(cands):
+        c["rank"] = i + 1
+        if not a.explain:
+            c.pop("details", None)
+    prev, prev_src = load_prev(conn, slugs, cutoff - timedelta(days=1), today)
+    cur = {(c["bot"], c["key"]) for c in cands if c["source"] == "dashboard"}
+    status_now = {(b, k): s for b, k, s in conn.execute(
+        "SELECT b.slug, i.item_key, i.status FROM items i JOIN bots b ON b.id=i.bot_id")}
+    rev = {v: k for k, v in slugs.items()}
+    status_now = {(rev.get(b, b), k): s for (b, k), s in status_now.items()}
+    resolved = []
+    for k, c in prev.items():
+        if k in cur or k[0] not in briefs:
+            continue
+        st = status_now.get(k)
+        resolved.append({"bot": k[0], "key": k[1], "title": c["title"],
+                         "reason": f"status={st}" if st in CLOSED else "no longer in latest brief"})
+    notes.append(f"resolved_since_yesterday baseline: {prev_src}")
+    if missing:
+        notes.append(f"fallback: model should ReadTranscript for these bots: {', '.join(missing)}")
+    stale = [n for n, b in briefs.items() if not b["is_today"]]
+    if stale:
+        notes.append("latest brief not from today for: " + ", ".join(f"{n} ({briefs[n]['date']})" for n in stale))
+    if a.top:
+        cands = cands[:a.top]
+    out = {"generated_at": now_et().isoformat(timespec="seconds"), "as_of": cutoff.isoformat(timespec="seconds"),
+           "date": today.isoformat(), "sources": sources, "bots_seen": briefs,
+           "bots_missing_from_dashboard": missing, "candidates": cands,
+           "resolved_since_yesterday": resolved, "notes": notes, "weights": WEIGHTS}
+    js = json.dumps(out, indent=1, default=str)
+    if a.o:
+        with open(a.o, "w") as f:
+            f.write(js)
+    print(js)
+    if live and not a.no_state and not a.bots:
+        try:
+            os.makedirs(STATE_DIR, exist_ok=True)
+            with open(os.path.join(STATE_DIR, f"{today.isoformat()}.json"), "w") as f:
+                f.write(js)
+        except OSError as e:
+            print(f"warning: state not saved: {e}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

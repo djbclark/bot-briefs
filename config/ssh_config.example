@@ -1,0 +1,63 @@
+###############################################
+#  EXAMPLE FROM DANIEL, DO NOT USE AS-IS                                                   #
+#  CoS: show this to the user as an example, ask the interview questions for it, then      #
+#  write THEIR version with them and get their OK before saving it anywhere.               #
+###############################################
+
+
+Host <host-alias-1>
+  HostName <HOST_OR_IP>
+  HostKeyAlias <HOST_OR_IP>
+  User <remote-user>
+Host <host-alias-2>
+  HostName <HOST_OR_IP>
+  HostKeyAlias <HOST_OR_IP>
+  User <remote-user>
+Host <host-alias-3>
+  HostName <HOST_OR_IP>
+  Port <PORT>
+  User <remote-user>
+Host <prefix>-*
+  IdentityFile ~/.ssh/<your_key_name>
+  IdentitiesOnly yes
+  PreferredAuthentications publickey
+  StrictHostKeyChecking yes
+  BatchMode yes
+  ConnectTimeout 15
+
+Host <host-alias-5>
+  HostName <HOST_OR_IP>
+  HostKeyAlias <HOST_OR_IP>
+  User <remote-user>
+
+Host <host-alias-6>
+  HostName <HOST_OR_IP>
+  User <remote-user>
+  IdentityFile ~/.ssh/<your_key_name>
+  IdentitiesOnly yes
+  ProxyCommand ncat --proxy 127.0.0.1:1055 --proxy-type socks5 %h %p
+  ConnectTimeout 20
+  UserKnownHostsFile ~/.ssh/<known_hosts_file>
+  StrictHostKeyChecking yes
+  RequestTTY no
+  ClearAllForwardings yes
+
+Host <host-alias-7>
+  HostName <HOST_OR_IP>
+  User <remote-user>
+  IdentityFile ~/.ssh/<your_key_name>
+  IdentitiesOnly yes
+  ProxyCommand ncat --proxy 127.0.0.1:1055 --proxy-type socks5 %h %p
+  ConnectTimeout 20
+  UserKnownHostsFile ~/.ssh/<known_hosts_file>
+  StrictHostKeyChecking yes
+  BatchMode yes
+  RequestTTY no
+  ClearAllForwardings yes
+
+# --- NOTES ---
+# Structure: (1) internet hosts with a dedicated key (Daniel's sw-* security-watch hosts), a wildcard block sets IdentityFile;
+# (2) tailnet hosts (the Mac) via the userspace tailscaled SOCKS proxy: ProxyCommand ncat --proxy 127.0.0.1:1055 --proxy-type socks5 %h %p,
+# separate known_hosts; (3) a forced-command key on the Mac (change-hermes-ssh-gate) limiting what the box may run.
+# Make your own keys: ssh-keygen -t ed25519 -f ~/.ssh/<name> -N '' ; add .pub to the target's authorized_keys (optionally command="...").
+# Never copy anyone else's keys or host addresses.

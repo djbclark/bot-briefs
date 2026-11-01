@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Report History · Bot Briefs{% endblock %}
+
+{% block content %}
+<div class="history-view">
+  <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+    <h1 style="font-size: 1.5rem; font-weight: 700;">All Reports by Date</h1>
+    <form method="get" action="/history" class="filter-group">
+      <label for="history-bot">Filter Bot:</label>
+      <select name="bot" id="history-bot" class="filter-select" data-autosubmit>
+        <option value="">All Bots</option>
+        {% for b in all_bots %}
+          <option value="{{ b.slug }}" {% if filter_bot == b.slug %}selected{% endif %}>{{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if grouped_reports %}
+    {% for date, reports in grouped_reports.items() %}
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header" style="background-color: var(--surface);">
+          <div class="card-title" style="font-size: 1rem;">
+            <span>📅 {{ date }}</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">({{ reports|length }} briefs)</span>
+          </div>
+        </div>
+        <div class="card-body" style="padding: 0;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tbody>
+              {% for rep in reports %}
+                <tr style="border-bottom: 1px solid var(--border);">
+                  <td style="padding: 10px 16px; width: 140px; font-weight: 600;">
+                    <a href="/b/{{ rep.bot_slug }}">{{ rep.bot_name }}</a>
+                  </td>
+                  <td style="padding: 10px 16px; width: 80px;">
+                    <span class="badge" style="background-color: var(--surface-alt);">{{ rep.kind }}</span>
+                  </td>
+                  <td style="padding: 10px 16px;">
+                    <a href="/r/{{ rep.id }}">{{ rep.title }}</a>
+                  </td>
+                  <td style="padding: 10px 16px; text-align: right; color: var(--text-muted); font-size: 0.85rem; width: 80px;">
+                    {{ rep.item_count }} items
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p style="color: var(--text-muted);">No reports found.</p>
+  {% endif %}
+</div>
+{% endblock %}

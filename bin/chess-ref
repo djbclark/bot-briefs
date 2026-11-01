@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Wrapper: prints the next shared base-36 post reference for Chess, e.g. "Ref: CHESS-1a"
+exec /home/box/bin/ref CHESS

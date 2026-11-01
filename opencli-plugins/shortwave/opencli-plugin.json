@@ -1,0 +1,6 @@
+{
+  "name": "shortwave",
+  "version": "0.1.0",
+  "opencli": ">=1.8.0",
+  "description": "Shortwave: read-only list of Inbox Todos via your logged-in Chrome session"
+}

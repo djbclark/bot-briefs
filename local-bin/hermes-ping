@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# hermes-ping "<repo>: <one line>" — Telegram ping via Hermes (box port)
+set -u
+usage(){ echo 'usage: hermes-ping "<repo>: <one line>"  (HERMES_PING_TARGET, HERMES_PING_DRY=1)'; }
+[ $# -eq 1 ] || { usage >&2; exit 2; }
+case "$1" in -h|--help) usage; exit 0;; -*) echo "hermes-ping: refusing lone flag '$1'" >&2; usage >&2; exit 2;; "") usage >&2; exit 2;; esac
+target="${HERMES_PING_TARGET:-}"  # e.g. telegram:<chat_id>:<topic_id>; set in env, never hardcode
+[ -n "$target" ] || { echo "hermes-ping: set HERMES_PING_TARGET (telegram:<chat_id>:<topic_id>)" >&2; exit 2; }
+cwd="$(timeout 3 pwd 2>/dev/null || echo '?')"; case "$cwd" in "$HOME"*) cwd="~${cwd#"$HOME"}";; esac
+text="$1
+[Grok Bot box · Coding bot · $cwd]"
+if [ "${HERMES_PING_DRY:-}" = 1 ]; then printf 'DRY target=%s\n%s\n' "$target" "$text"; exit 0; fi
+HERMES="$(timeout 3 bash -c 'command -v hermes' 2>/dev/null || echo "$HOME/.local/bin/hermes")"
+exec "$HERMES" send -q -t "$target" "$text"

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# brief: shared CLI for the Bot Briefs dashboard. See /home/box/agent-data/shared/dashboard/README.md
+D=/home/box/agent-data/shared/dashboard
+export PYTHONPATH="$D${PYTHONPATH:+:$PYTHONPATH}"
+exec "$D/.venv/bin/python" -m briefs.cli "$@"

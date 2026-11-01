@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly dashboard DB backup (07:30 UTC = 03:30 ET)
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

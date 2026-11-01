@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Functional tailscaled check (monit "check program"). Exit 0 = healthy or tolerated, 1 = restart wanted.
+# Healthy if: local API answers AND (a usually-online peer answers tailscale ping) AND the Serve URL answers via SOCKS.
+# Restart only after failures sustained >= 4 min (rides out the 05:00-05:05 ET home-network reboot blips);
+# wd-svc adds restart backoff on top.
+export PATH=/home/box/.local/bin:/usr/bin:/bin
+TS="tailscale --socket=/home/box/.local/share/tailscale/tailscaled.sock"
+ST=/home/box/.local/state/watchdogs; F=$ST/ts-health.firstfail; LOG=$ST/watchdog.log
+PEERS="<TAILNET-IP> <TAILNET-IP>"   # an always-on peer, the VPS. Not the Mac (laptop).
+URL=https://grok-bot-box.<tailnet>.ts.net/
+why=""
+if ! timeout 15 $TS status --peers=false >/dev/null 2>&1; then why="local API unresponsive"
+elif ! timeout 15 $TS status --json 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);sys.exit(0 if d.get("BackendState")=="Running" and d["Self"].get("Online") else 1)'; then
+  why="control plane offline (Self.Online=false: no netmap, peers cannot reach this node)"
+else
+  ok=0; for p in $PEERS; do timeout 20 $TS ping -c 2 --timeout 5s "$p" >/dev/null 2>&1 && { ok=1; break; }; done
+  [ $ok = 1 ] || why="no peer answers tailscale ping ($PEERS)"
+  if [ -z "$why" ]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 --socks5-hostname localhost:1055 "$URL")
+    [ "$code" = 200 ] || why="Serve URL via SOCKS returned '$code'"
+  fi
+fi
+# never-funnel guard (report only)
+if timeout 10 $TS funnel status 2>/dev/null | grep -qi 'funnel on'; then
+  echo "$(date '+%F %T %Z') [tailscaled] WARNING: Funnel is ON — dashboard must be tailnet-only" >> $LOG
+fi
+now=$(date +%s)
+if [ -z "$why" ]; then
+  [ -f $F ] && { echo "$(date '+%F %T %Z') [tailscaled] health recovered" >> $LOG; rm -f $F; }
+  echo "ok"; exit 0
+fi
+[ -f $F ] || { echo $now > $F; echo "$(date '+%F %T %Z') [tailscaled] health failing: $why" >> $LOG; }
+age=$((now - $(cat $F)))
+echo "failing ${age}s: $why"
+sustain=${WD_TS_SUSTAIN:-240}; fast=""
+# Fast path (2026-10-24): after a box pause the control long-poll goes stale and tailscaled never recovers by itself.
+# If Self.Online=false AND the log shows "long-poll timed out" recently, restart after ${WD_TS_FAST_SUSTAIN:-75}s.
+case "$why" in control\ plane\ offline*)
+  tail -n 400 /home/box/.local/share/tailscale/tailscaled.log 2>/dev/null | awk '/Program starting/{n=0;next}/long-poll timed out/{n++}END{print n+0}' | { read n; [ "${n:-0}" -ge 2 ]; } && { fast=1; sustain=${WD_TS_FAST_SUSTAIN:-75}; };;
+esac
+# ss -K stopgap (2026-10-24b, upstream tailscale#12021 / PR#21834): on the fast path, before restarting, kill
+# tailscaled's established TCP/443 conns to the control IPs so it redials; only restart if still offline at $sustain.
+# WD_TS_SSK_DRYRUN=1 logs what would be killed without killing. WD_TS_SSK=0 disables. Needs passwordless sudo for ss.
+SSK=$ST/ts-health.ssk
+if [ "${WD_TS_SSK:-1}" = 1 ] && [ -n "$fast" ] && [ $age -lt $sustain ] && [ ! -f $SSK -o "$(cat $SSK 2>/dev/null)" != "$(cat $F)" ]; then
+  tpid=$(pgrep -x -u "$(id -u)" tailscaled | head -1)
+  ips=$( { echo 198.18.0.1; getent ahostsv4 controlplane.tailscale.com login.tailscale.com 2>/dev/null | awk '{print $1}'; } | sort -u)
+  conns=""; for ip in $ips; do
+    conns="$conns $(ss -Htnp state established dst "$ip" dport = :443 2>/dev/null | grep "pid=$tpid," | awk '{print $3"->"$4"(sendq="$2")"}' | tr '\n' ' ')"
+  done
+  conns=$(echo $conns)
+  if [ -z "$tpid" ] || [ -z "$conns" ]; then
+    echo "$(date '+%F %T %Z') [tailscaled] ss -K: no control conns found (pid=${tpid:-none}); falling through to restart path" >> $LOG
+  elif [ "${WD_TS_SSK_DRYRUN:-0}" = 1 ]; then
+    echo "$(date '+%F %T %Z') [tailscaled] ss -K DRYRUN pid=$tpid would kill: $conns" >> $LOG
+  else
+    for ip in $ips; do
+      for sp in $(ss -Htnp state established dst "$ip" dport = :443 2>/dev/null | grep "pid=$tpid," | awk '{n=split($3,a,":");print a[n]}'); do
+        sudo -n ss -K -tn state established src :"$sp" dst "$ip" dport = :443 >/dev/null 2>&1; rc=$?
+        echo "$(date '+%F %T %Z') [tailscaled] ss -K pid=$tpid sport=$sp dst=$ip:443 rc=$rc" >> $LOG
+      done
+    done
+    echo "$(date '+%F %T %Z') [tailscaled] ss -K done (killed: $conns); waiting ${WD_TS_SSK_WAIT:-20}s" >> $LOG
+    sleep ${WD_TS_SSK_WAIT:-20}
+    if timeout 15 $TS status --json 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);sys.exit(0 if d["Self"].get("Online") else 1)'; then
+      echo "$(date '+%F %T %Z') [tailscaled] recovered after ss -K (no restart)" >> $LOG
+      rm -f $F $SSK; echo "recovered via ss -K"; exit 0
+    fi
+    echo "$(date '+%F %T %Z') [tailscaled] still offline after ss -K; restart at ${sustain}s if not recovered" >> $LOG
+  fi
+  cat $F > $SSK
+fi
+if [ $age -ge $sustain ]; then rm -f $F $SSK; exit 1; fi
+exit 0

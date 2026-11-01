@@ -1,0 +1,18 @@
+[Unit]
+Description=Bot Briefs dashboard (VPS copy, dual-run with the Grok Bot box)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/var/lib/briefs/app
+Environment=PYTHONPATH=/var/lib/briefs/app
+Environment=BRIEFS_DB=/var/lib/briefs/data/briefs.db
+Environment=BRIEFS_PORT=8642
+Environment=BRIEFS_PUBLIC_URL=https://vps-primary.example-tailnet.ts.net
+Environment=BRIEFS_SYNC_TOKEN_FILE=/var/lib/briefs/secrets/sync-token
+Environment=BRIEFS_NOTIFY_CMD=/var/lib/briefs/app/ops/vps/notify-bot-vps
+ExecStart=/var/lib/briefs/venv/bin/python -m uvicorn briefs.web:app --host 127.0.0.1 --port 8642 --no-access-log
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

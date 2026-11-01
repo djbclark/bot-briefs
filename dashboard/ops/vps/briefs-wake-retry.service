@@ -1,0 +1,8 @@
+[Unit]
+Description=Resend failed Chief of Staff wake-ups (backoff)
+
+[Service]
+Type=oneshot
+Environment=BRIEFS_DB=/var/lib/briefs/data/briefs.db
+ExecStart=/var/lib/briefs/app/ops/vps/notify-bot-vps --retry
+SuccessExitStatus=0 1

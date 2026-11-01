@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# wd-hermes: Hermes quota watchdog (monit, every 15 min). Runs on the box, acts on the Mac.
+#   change-hermes --check over ssh (<mac-hermes-ssh-alias>, forced-command gate) probes the route in
+#   fallback_providers[0] with one tiny real request. rc 10 (quota/credits/model gone) ->
+#   change-hermes --auto, with backoff (30 min * 2^(n-1), cap 4 h; n = auto runs in 6 h).
+#   Mac off/asleep (port 22 not answering) = skip, exit 0. 04:58-05:10 ET (home network
+#   reboot) = skip. rc 73 (busy: another change-hermes, e.g. the Mac's own watchdogd entry
+#   hermes-quota, holds the lock in ~/.hermes/state on the Mac) = skip, not counted as a run.
+#   The --auto cooldown (30 min after a successful --auto from anywhere) is enforced on the
+#   Mac by change-hermes itself: inside it --auto only re-checks (rc 0 ok / 10 still bad). Exit 1 only for things a human must look at (ssh auth refused, --auto
+#   found nothing). Log: ~/.local/state/watchdogs/watchdog.log
+export PATH=/home/box/.local/bin:/usr/local/bin:/usr/bin:/bin
+set -u
+ST=/home/box/.local/state/watchdogs; LOG=$ST/watchdog.log; H=$ST/hermes-auto.runs; mkdir -p "$ST"; touch "$H"
+log() { echo "$(date '+%F %T %Z') [hermes] $*" >> "$LOG"; }
+CH=/home/box/.local/bin/change-hermes; MAC="<TAILNET-IP>"
+hm=$(date +%H%M); if [ "$hm" -ge 0458 ] && [ "$hm" -le 0510 ]; then exit 0; fi
+banner=$(timeout 12 ncat --proxy 127.0.0.1:1055 --proxy-type socks5 "$MAC" 22 < /dev/null 2>/dev/null | head -c 4)
+[ "$banner" = "SSH-" ] || { log "skip: Mac unreachable"; exit 0; }
+out=$(timeout 300 "$CH" --remote --check 2>&1); rc=$?
+case $rc in
+  0) exit 0 ;;
+  73) log "skip: busy (another change-hermes run holds the Mac lock)"; exit 0 ;;
+  75) log "ssh to Mac refused/failed although port 22 answers (box key not in Mac authorized_keys?)"; exit 1 ;;
+  10) log "UNHEALTHY: $out" ;;
+  *) log "check error rc=$rc (ssh key not authorized on Mac?): $(echo "$out" | tail -1)"; exit 1 ;;
+esac
+now=$(date +%s); awk -v c=$((now-21600)) '$1>c' "$H" > "$H.tmp"; mv "$H.tmp" "$H"
+n=$(wc -l < "$H"); last=$(tail -1 "$H"); last=${last:-0}
+if [ "$n" -gt 0 ]; then
+  wait=$((1800 * (1 << (n-1)))); [ $wait -gt 14400 ] && wait=14400
+  if [ $((now - last)) -lt $wait ]; then log "auto deferred (backoff: $n runs in 6 h, next in $((wait-(now-last)))s)"; exit 0; fi
+fi
+out=$(timeout 900 "$CH" --remote --auto 2>&1); rc=$?
+log "change-hermes --auto rc=$rc: $(echo "$out" | rg -v '^\s*$' | tail -2 | tr '\n' ' ' | cut -c1-300)"
+case $rc in
+  73|75) exit 0 ;;                           # busy / Mac gone: skip, not a run
+  10) echo "$now" >> "$H"; exit 0 ;;         # Mac-side cooldown re-check still bad: backoff
+  0) echo "$now" >> "$H"; exit 0 ;;
+  *) echo "$now" >> "$H"; exit 1 ;;          # 3 = no route works: a human should look
+esac

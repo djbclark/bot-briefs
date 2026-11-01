@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Keeps the OpenCLI Browser Bridge (and so `opencli saner ...`) usable on the box (added 2026-10-28, Coding).
+# Runs from monit every 10 cycles (~5 min). Exit 0 always.
+#  1. Box Chrome not running  -> start it with `box-chrome` on the agent display (profile keeps the extension + Saner login).
+#  2. Chrome up but extension not connected -> restart the opencli daemon once per episode.
+#  3. Every WD_SANER_LOGIN_EVERY (1800 s): `opencli saner status`; if not logged in -> one hermes-ping (and one when it recovers).
+#     Same cadence: `opencli shortwave status`; if not signed in -> one hermes-ping (state: shortwave.fail/.pinged), one on recovery.
+#  4. Any problem lasting WD_SANER_NOTIFY_AFTER (1200 s) -> one hermes-ping; one more on recovery.
+# Env: WD_SANER_NOTIFY=0 disables pings. Skips 04:58-05:10 ET. Never prints cookies or tokens.
+export PATH=/home/box/.local/bin:/usr/local/bin:/usr/bin:/bin
+export DISPLAY="${WD_SANER_DISPLAY:-:13}"
+ST=/home/box/.local/state/watchdogs; LOG=$ST/watchdog.log; F=$ST/saner.fail; ACT=$ST/saner.acted; PING=$ST/saner.pinged; LAST=$ST/saner.login-checked
+mkdir -p "$ST"; log() { echo "$(date '+%F %T %Z') [saner] $*" >> "$LOG"; }
+now=$(date +%s); hm=$(TZ=America/New_York date +%H%M)
+{ [ "$hm" -ge 0458 ] && [ "$hm" -le 0510 ]; } && exit 0
+notify() { [ "${WD_SANER_NOTIFY:-1}" != 0 ] && timeout 30 hermes-ping "$1" >/dev/null 2>&1; }
+problem=""
+if ! pgrep -f '/opt/google/chrome/chrome --no-sandbox' >/dev/null; then
+  log "Chrome not running; starting box-chrome on $DISPLAY"
+  setsid nohup box-chrome >/dev/null 2>&1 < /dev/null &
+  sleep 20
+fi
+ext=$(timeout 40 opencli doctor 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['data'].get('extensionConnected'))" 2>/dev/null)
+if [ "$ext" != True ]; then
+  problem="${problem:+$problem; }extension not connected"
+  if [ ! -f "$ACT" ]; then : > "$ACT"; log "extension not connected: restarting opencli daemon"; timeout 30 opencli daemon restart >/dev/null 2>&1; fi
+elif [ ! -f "$LAST" ] || [ $(( now - $(stat -c %Y "$LAST") )) -ge "${WD_SANER_LOGIN_EVERY:-1800}" ]; then
+  : > "$LAST"
+  s=$(timeout 40 opencli saner status 2>&1 | python3 -c "import sys,json;print(json.load(sys.stdin)['data'][0].get('login'))" 2>/dev/null)
+  [ "$s" = yes ] || problem="Saner not signed in (needs a sign-in on the box Chrome)"
+  sw=$(timeout 40 opencli shortwave status 2>&1 | python3 -c "import sys,json;print(json.load(sys.stdin)['data'][0].get('login'))" 2>/dev/null)
+  SWF=$ST/shortwave.fail; SWP=$ST/shortwave.pinged
+  if [ "$sw" = no ]; then
+    [ -f "$SWF" ] || { echo "$now" > "$SWF"; log "problem: Shortwave not signed in"; }
+    [ -f "$SWP" ] || { : > "$SWP"; log "notifying: Shortwave not signed in"; notify "Shortwave on the box Chrome is not signed in (opencli shortwave needs a sign-in at app.shortwave.com)"; }
+  elif [ "$sw" = yes ] && [ -f "$SWF" ]; then
+    log "shortwave recovered"; [ -f "$SWP" ] && notify "Shortwave on the box is signed in again"; rm -f "$SWF" "$SWP"
+  elif [ "$sw" != yes ]; then log "shortwave status check failed (not a login verdict)"; fi
+fi
+if [ -z "$problem" ]; then
+  if [ -f "$F" ]; then d=$(( now - $(cat "$F") )); log "recovered after ${d}s"; [ -f "$PING" ] && notify "Saner/OpenCLI on the box is working again after $((d/60)) min"; rm -f "$F" "$ACT" "$PING"; fi
+  exit 0
+fi
+[ -f "$F" ] || { echo "$now" > "$F"; log "problem: $problem"; }
+age=$(( now - $(cat "$F") ))
+case "$problem" in *"not signed in"*) lim=0;; *) lim=${WD_SANER_NOTIFY_AFTER:-1200};; esac
+if [ "$age" -ge "$lim" ] && [ ! -f "$PING" ]; then : > "$PING"; log "notifying: $problem"; notify "Saner/OpenCLI on the box: $problem (for $((age/60)) min)"; fi
+exit 0

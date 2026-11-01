@@ -1,0 +1,28 @@
+# Bearer-token gate in front of mcp-proxy (saner_mcp.py). Exposed as :8443/<path>.
+# The site address must be http://:PORT (not a hostname): a host-specific site
+# answers Funnel's Host header with an empty 200 and bypasses the gate.
+# ONE TOKEN PER CLIENT: add a matcher + handle block per client and the client name
+# to CLIENTS in auth-proxy.sh. Never accept a token that another service also uses.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+http://:18793 {
+	bind 127.0.0.1
+	@grokbot header Authorization "Bearer {$MCP_TOKEN_GROKBOT}"
+	@laptop header Authorization "Bearer {$MCP_TOKEN_LAPTOP}"
+	handle @grokbot {
+		reverse_proxy 127.0.0.1:18792 {
+			flush_interval -1
+		}
+	}
+	handle @laptop {
+		reverse_proxy 127.0.0.1:18792 {
+			flush_interval -1
+		}
+	}
+	handle {
+		respond "unauthorized" 401
+	}
+}

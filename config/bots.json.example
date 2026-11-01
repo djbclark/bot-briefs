@@ -1,0 +1,26 @@
+{
+  "_comment": "Registry of Grok Bot bots reachable via notify-bot. No secrets here: URL/KEY/HEADER come from env AGENT_WEBHOOK_<BOT>_URL/_KEY/_HEADER (BOT = name uppercased, - -> _).",
+  "bots": {
+    "coding": {
+      "name": "Coding",
+      "agent_id": "<YOUR_CODING_AGENT_ID>",
+      "default_cwd": "/home/box/src",
+      "received_log": "/home/box/agent-data/shared/agent-webhook/coding/received.log"
+    },
+    "techno-euphora": {
+      "name": "Techno Euphora",
+      "agent_id": "<YOUR_TECHNO_EUPHORA_AGENT_ID>",
+      "default_cwd": "/home/box/src/techno-euphora",
+      "received_log": "/home/box/agent-data/shared/agent-webhook/techno-euphora/received.log",
+      "legacy_env_fallback": true
+    },
+    "chief-of-staff": {
+      "name": "Chief of Staff",
+      "agent_id": "<YOUR_CHIEF_OF_STAFF_AGENT_ID>",
+      "default_cwd": "/home/box/agent-data/shared/dashboard",
+      "received_log": "/home/box/agent-data/shared/agent-webhook/chief-of-staff/received.log",
+      "purpose": "Dashboard dispatch: routes submitted Bot Briefs dashboard actions to the right bot"
+    }
+  },
+  "_example": "EXAMPLE FROM DANIEL, DO NOT USE AS-IS: keep only the bots that have webhook routines; agent ids replaced with placeholders."
+}

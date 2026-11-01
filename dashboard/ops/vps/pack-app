@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Writes a tar stream of the app code (no data, venv, logs, backups, tests) to stdout. Use: pack-app | ssh vps 'tar -x -C /var/lib/briefs/app'
+cd "$(dirname "$0")/../.." || exit 1
+tar --exclude='__pycache__' --exclude='*.bak-*' --exclude='*.pyc' -cf - briefs ops/vps requirements.txt
