@@ -89,6 +89,7 @@ agrees. Existing files are never overwritten unless `--force` (which saves a `.b
 | 14 | webhook dispatch | [docs/phase-14-webhook-dispatch.md](docs/phase-14-webhook-dispatch.md) | recommended |
 | 15 | rules / conventions | [docs/phase-15-rules.md](docs/phase-15-rules.md) | no |
 | 16 | verification + troubleshooting | [docs/phase-16-troubleshooting.md](docs/phase-16-troubleshooting.md) | no |
+| 17 | keep a public copy in sync (optional) | [docs/phase-17-sync-to-public.md](docs/phase-17-sync-to-public.md) | no |
 
 Reference docs: [docs/architecture.md](docs/architecture.md) · [docs/interview.md](docs/interview.md) ·
 [docs/grok-bot-constraints.md](docs/grok-bot-constraints.md) · [docs/executive-summary.md](docs/executive-summary.md).
