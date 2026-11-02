@@ -58,3 +58,10 @@ scripts/verify.sh 11
 ```
 
 Done when the checks pass and the user agrees. Then update PROGRESS.md: `phase 11 done <date>; next 12`.
+
+## Note: wd-saner private display (2026-11-02)
+
+`wd-saner` no longer uses the agent desktop display (which the platform recycles). It runs its own Xvfb on `:300`
+with a dedicated Chrome profile (`/home/box/chrome-profile/opencli-private`, a copy of the old one), checks liveness
+by the exact `--user-data-dir`, and only ever kills that one Chrome. Details and rollback:
+[shared-docs/watchdogs.md](../shared-docs/watchdogs.md) (section "Private display").
