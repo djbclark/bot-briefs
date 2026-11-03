@@ -279,7 +279,7 @@ herdr, Orca, Paseo, launchd, Keychain, `hermes-ping` or Mac process list.
 - **G1 Repos.** `~/src/<repo>` is `/home/box/src/<repo>` (also check `/workspace`,
   the scratch dir, and any worktree you added: `git worktree list`). Remote
   state (open PRs, CI on what you pushed) is read with `gh`/`curl` using
-  `GITHUB_TOKEN_DJBCLARK`, or the GitHub connector; never print the token.
+  `GITHUB_TOKEN_<USER>`, or the GitHub connector; never print the token.
 - **G2 Artifacts.** The box's `/tmp` and `mktemp` dirs, scratch clones under
   `/home/box/src` or `/workspace`, files under `/home/box/agent-data/shared/`,
   and things made outside the box during the session: connector drafts (mail,
