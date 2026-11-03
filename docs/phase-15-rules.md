@@ -30,6 +30,10 @@
 12. Tailscale Serve only; never Funnel for anything on the box.
 ```
 
+## Token-saving and chat-format rules
+
+Also offer these: [token-saving-rules.md](token-saving-rules.md) (scans only a few hours before the brief, zero-token pollers, coding work to ACP agents with a verified model, GUI work to the computer-use agent) and [chat-format.md](chat-format.md) (`***1.***` items, `> ***a.***` sub-items; dashboard files keep `**1. Title**` / `1.1`).
+
 ## Verify
 
 - Read the rules back to the user one by one; save the confirmed list to memory and to `/home/box/agent-data/shared/bot-dashboard.md` (or a rules doc every bot reads).

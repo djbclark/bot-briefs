@@ -31,7 +31,11 @@ Verify: `scripts/verify.sh 11`; kill the dashboard and see it return within ~1 m
 
 Doc: [shared-docs/watchdogs.md](../shared-docs/watchdogs.md). Before starting monit, delete checks for services the user does not run from `watchdogs/conf.d/services.monitrc` and replace `hermes-ping` (alert channel) with theirs or a no-op.
 
-## Repo files and where they go (13 files)
+## Zero-token pollers
+
+Monit can also replace LLM polling routines: a script checks deterministically and wakes the bot only on change. See [shared-docs/zero-token-pollers.md](../shared-docs/zero-token-pollers.md) and [docs/token-saving-rules.md](token-saving-rules.md). The example drop-in ships as `*.monitrc.disabled`, so installing it changes nothing until you rename it.
+
+## Repo files and where they go (15 files)
 
 Copy with `scripts/install.sh --phase 11` (dry run; add `--apply` to write; existing files are kept unless `--force`, which makes a `.bak-<timestamp>` first). Manual equivalent: `install -D -m <mode> <repo_path> <destination>`.
 
@@ -47,6 +51,8 @@ Copy with `scripts/install.sh --phase 11` (dry run; add `--apply` to write; exis
 | [`watchdogs/bin/wd-svc`](../watchdogs/bin/wd-svc) | `/home/box/agent-data/shared/watchdogs/bin/wd-svc` | 755 |
 | [`watchdogs/bin/wd-ts-health`](../watchdogs/bin/wd-ts-health) | `/home/box/agent-data/shared/watchdogs/bin/wd-ts-health` | 755 |
 | [`watchdogs/conf.d/briefs-mirror.monitrc`](../watchdogs/conf.d/briefs-mirror.monitrc) | `/home/box/agent-data/shared/watchdogs/conf.d/briefs-mirror.monitrc` | 644 |
+| [`watchdogs/bin/wd-example-poller`](../watchdogs/bin/wd-example-poller) | `/home/box/agent-data/shared/watchdogs/bin/wd-example-poller` | 755 |
+| [`watchdogs/conf.d/example-pollers.monitrc.disabled`](../watchdogs/conf.d/example-pollers.monitrc.disabled) | `/home/box/agent-data/shared/watchdogs/conf.d/example-pollers.monitrc.disabled` | 644 |
 | [`watchdogs/conf.d/hermes.monitrc`](../watchdogs/conf.d/hermes.monitrc) | `/home/box/agent-data/shared/watchdogs/conf.d/hermes.monitrc` | 644 |
 | [`watchdogs/conf.d/services.monitrc`](../watchdogs/conf.d/services.monitrc) | `/home/box/agent-data/shared/watchdogs/conf.d/services.monitrc` | 644 |
 | [`watchdogs/monitrc`](../watchdogs/monitrc) | `/home/box/.config/monit/monitrc` | 600 |
