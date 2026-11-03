@@ -5,13 +5,13 @@
 ## How the CoS runs this phase
 
 1. Explain in 2-4 sentences what this phase does and why. Mark what is Grok-Bot-specific vs generic.
-2. Show the relevant repo files/examples. Anything marked `EXAMPLE FROM DANIEL, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
+2. Show the relevant repo files/examples. Anything marked `EXAMPLE TEMPLATE, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
 3. Ask before running anything that installs, overwrites, sends, spends, exposes a service, or is destructive.
 4. Do the steps. Prefer `scripts/install.sh --phase 4` (dry run) then `--apply` for file copies.
 5. Run the Verify section and report results honestly.
 6. Record progress (PROGRESS.md + memory) and wait for the user before the next phase.
 
-## Guide (from Daniel's working system)
+## Guide (from the operator's working system)
 
 ```text
  * bin/ref <BOT>           prints `Ref: <BOT>-<base36>` from ONE global counter (shared/refs/GLOBAL.count, flock, issued.log). Never reset.
@@ -21,7 +21,7 @@
  * bin/cos-gather          stdlib Python: latest daily reports (read-only DB), drops done/dismissed/snoozed, pulls Saner+Shortwave
                            via opencli, scores, NEW flags, resolved_since_yesterday, bots_missing_from_dashboard. PERSONALIZE slugs/sources.
  * ~/.local/bin/notify-bot POST JSON to a bot webhook routine (phase 14); secrets from env or ~/.config/agent-webhook/secrets.env.
- * ~/.local/bin/hermes-ping alert channel used by watchdogs (Daniel: Hermes->Telegram on his Mac). Replace with yours or a no-op.
+ * ~/.local/bin/hermes-ping alert channel used by watchdogs (e.g. Hermes->Telegram on a Mac). Replace with yours or a no-op.
  * others (job-watch, forgejo helpers, aiuse, tool-update, repo-sync, risk-watch): optional, in local-bin/.
 Steps: the files listed under 'Repo files' below (`scripts/install.sh --phase N`), the files listed under 'Repo files' below (`scripts/install.sh --phase N`); `ref TEST` twice (consecutive ids); `notify-bot --list`.
 NEVER type a Ref by hand.  Verify: `scripts/verify.sh 4`.

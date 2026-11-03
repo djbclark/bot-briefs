@@ -7,11 +7,11 @@
       "default_cwd": "/home/box/src",
       "received_log": "/home/box/agent-data/shared/agent-webhook/coding/received.log"
     },
-    "techno-euphora": {
-      "name": "Techno Euphora",
+    "project-bot": {
+      "name": "Project Bot",
       "agent_id": "<YOUR_TECHNO_EUPHORA_AGENT_ID>",
-      "default_cwd": "/home/box/src/techno-euphora",
-      "received_log": "/home/box/agent-data/shared/agent-webhook/techno-euphora/received.log",
+      "default_cwd": "/home/box/src/project-bot",
+      "received_log": "/home/box/agent-data/shared/agent-webhook/project-bot/received.log",
       "legacy_env_fallback": true
     },
     "chief-of-staff": {
@@ -22,5 +22,5 @@
       "purpose": "Dashboard dispatch: routes submitted Bot Briefs dashboard actions to the right bot"
     }
   },
-  "_example": "EXAMPLE FROM DANIEL, DO NOT USE AS-IS: keep only the bots that have webhook routines; agent ids replaced with placeholders."
+  "_example": "EXAMPLE TEMPLATE, DO NOT USE AS-IS: keep only the bots that have webhook routines; agent ids replaced with placeholders."
 }

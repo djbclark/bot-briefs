@@ -5,13 +5,13 @@
 ## How the CoS runs this phase
 
 1. Explain in 2-4 sentences what this phase does and why. Mark what is Grok-Bot-specific vs generic.
-2. Show the relevant repo files/examples. Anything marked `EXAMPLE FROM DANIEL, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
+2. Show the relevant repo files/examples. Anything marked `EXAMPLE TEMPLATE, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
 3. Ask before running anything that installs, overwrites, sends, spends, exposes a service, or is destructive.
 4. Do the steps. Prefer `scripts/install.sh --phase 13` (dry run) then `--apply` for file copies.
 5. Run the Verify section and report results honestly.
 6. Record progress (PROGRESS.md + memory) and wait for the user before the next phase.
 
-## Guide (from Daniel's working system)
+## Guide (from the operator's working system)
 
 ```text
 Second copy on an always-on VPS in the tailnet, readable/actionable when the box is frozen. Box authoritative.
@@ -23,7 +23,7 @@ briefs/syncapi.py, ops/vps/*, README section 10.
  * Auth: identity headers as on the box; /sync/* needs `Authorization: Bearer <sync token>`. Create:
    `openssl rand -hex 32 > ~/.config/briefs-mirror/token; chmod 600`; copy via scp to /var/lib/briefs/secrets/sync-token (600);
    webhook settings in /var/lib/briefs/secrets/webhook.env (600).
- * VPS units: ops/vps/briefs-web.service, briefs-wake-retry.{service,timer}, briefs-backup.{service,timer} (Daniel: systemd user
+ * VPS units: ops/vps/briefs-web.service, briefs-wake-retry.{service,timer}, briefs-backup.{service,timer} (e.g. systemd user
    units of root with linger on NixOS; system units fine elsewhere). uv venv; Serve --https=443 tailnet-only.
  * Health: red banner if no update > 30 min; /healthz/mirror; box shared/briefs-mirror/status.json + lag.log.
 Steps: provision, join tailnet, ops/vps/pack-app, install units, set BRIEFS_SYNC_TOKEN_FILE, backfill, start mirror,

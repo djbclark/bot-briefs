@@ -349,7 +349,7 @@ def cmd_items(args: argparse.Namespace) -> None:
 
 
 def _mirror_pull() -> None:
-    """Dual-run with the VPS dashboard: fetch actions Daniel made there before reading. Silent, short, never fails."""
+    """Dual-run with the VPS dashboard: fetch actions the user made there before reading. Silent, short, never fails."""
     try:
         from briefs.mirror import best_effort_pull
         best_effort_pull()

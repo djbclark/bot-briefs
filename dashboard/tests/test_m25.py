@@ -92,7 +92,7 @@ def test_m2_migration_and_idempotence(tmp_path: Path) -> None:
     conn.execute(
         """
         INSERT INTO actions (id, item_id, bot_id, type, payload_json, author, status, created_at, updated_at)
-        VALUES (10, 1, ?, 'done', '{}', 'daniel', 'pending', '2026-10-23T08:00:00', '2026-10-23T08:00:00')
+        VALUES (10, 1, ?, 'done', '{}', 'user', 'pending', '2026-10-23T08:00:00', '2026-10-23T08:00:00')
         """,
         (radar_bot.id,),
     )
@@ -103,7 +103,7 @@ def test_m2_migration_and_idempotence(tmp_path: Path) -> None:
         conn.execute(
             """
             INSERT INTO actions (item_id, bot_id, type, payload_json, author, status)
-            VALUES (1, 'b1', 'reply', '{}', 'daniel', 'queued')
+            VALUES (1, 'b1', 'reply', '{}', 'user', 'queued')
             """
         )
 
@@ -123,7 +123,7 @@ def test_m2_migration_and_idempotence(tmp_path: Path) -> None:
     conn.execute(
         """
         INSERT INTO actions (item_id, bot_id, type, payload_json, author, status, rank)
-        VALUES (1, 'b1', 'reply', '{"text":"hello"}', 'daniel', 'queued', 1)
+        VALUES (1, 'b1', 'reply', '{"text":"hello"}', 'user', 'queued', 1)
         """
     )
     conn.commit()
@@ -433,7 +433,7 @@ def test_submit_all_ordering_and_dispatch(temp_db: str, tmp_path: Path, monkeypa
     conn.execute("UPDATE items SET first_seen = '2026-10-20' WHERE id = ?", (dc_newer_id,))
 
     # Pre-existing queued action
-    queue_text(conn, fam_new_id, "Existing queued action text", "daniel")
+    queue_text(conn, fam_new_id, "Existing queued action text", "user")
     conn.commit()
     conn.close()
 
@@ -533,7 +533,7 @@ def test_action_lifecycle(temp_db: str) -> None:
     item_id = items[0]["id"]
 
     # 1. Submit text action
-    act = submit_text(conn, item_id, "Please investigate this issue", "daniel")
+    act = submit_text(conn, item_id, "Please investigate this issue", "user")
     act_id = act["id"]
     assert act["status"] == "submitted"
 
@@ -561,7 +561,7 @@ def test_action_lifecycle(temp_db: str) -> None:
     assert in_prog2[0]["latest_action"]["bot_note"] == "Is this production only?"
 
     # 4. Reply back and ack applied
-    act2 = submit_text(conn, item_id, "Yes, production only", "daniel")
+    act2 = submit_text(conn, item_id, "Yes, production only", "user")
     acked_applied = ack(conn, act2["id"], "applied", note="Patched in prod", keep_open=False)
     assert acked_applied["status"] == "applied"
 
@@ -579,15 +579,15 @@ def test_action_lifecycle(temp_db: str) -> None:
     # 5. Test keep_open=True
     upsert_report(conn, "radar", "2026-10-23", "daily", "Radar Daily 2", "1. Item Two\n   Details")
     item2_id = [x["id"] for x in items_open(conn, bot="radar") if "Item Two" in x["title"]][0]
-    act3 = submit_text(conn, item2_id, "Keep this open please", "daniel")
+    act3 = submit_text(conn, item2_id, "Keep this open please", "user")
     ack(conn, act3["id"], "applied", note="Done partial", keep_open=True)
     it3 = conn.execute("SELECT status FROM items WHERE id = ?", (item2_id,)).fetchone()
     assert it3["status"] == "open"
 
     # 6. Test inbox transitions: queued/submitted -> processing, pending -> seen
-    act_q = queue_text(conn, item2_id, "Queued msg", "daniel")
-    act_s = submit_text(conn, item2_id, "Submitted msg", "daniel")
-    act_p = create_action(conn, item2_id, "priority", {"delta": -1}, "daniel")
+    act_q = queue_text(conn, item2_id, "Queued msg", "user")
+    act_s = submit_text(conn, item2_id, "Submitted msg", "user")
+    act_p = create_action(conn, item2_id, "priority", {"delta": -1}, "user")
 
     # Peek leaves statuses untouched
     peeked = inbox(conn, "radar", peek=True)
@@ -623,7 +623,7 @@ def test_in_progress_visibility_and_ids_polling(temp_db: str) -> None:
     upsert_report(conn, "radar", "2026-10-23", "daily", "Radar Daily", "1. Vulnerability\n   Details")
     items = items_open(conn, bot="radar")
     item_id = items[0]["id"]
-    submit_text(conn, item_id, "Working on it", "daniel")
+    submit_text(conn, item_id, "Working on it", "user")
     conn.close()
 
     r_entry = client.get("/in-progress", headers={"Tailscale-User-Login": "user@example.com"})
@@ -705,8 +705,8 @@ def test_cli_commands(temp_db: str, monkeypatch) -> None:
     id1 = items[0]["id"]
     id2 = items[1]["id"]
 
-    act1 = submit_text(conn, id1, "Fix 1", "daniel")
-    act2 = submit_text(conn, id2, "Fix 2", "daniel")
+    act1 = submit_text(conn, id1, "Fix 1", "user")
+    act2 = submit_text(conn, id2, "Fix 2", "user")
     conn.close()
 
     captured: list[str] = []

@@ -43,7 +43,7 @@ UNSUB_ACTIONS = {"kill", "archive_unsub", "delete_unsub"}
 HISTORY_ACTIONS = {"kill", "delete_hist"}
 MONEY_ACTIONS = {"rule", "archive", "keep", "archive_unsub"}  # "rule" = leave to daily rule (no action)
 # Sensitive stacks (s["sensitive"] set) are shown, default Keep, and may take any action in s["allowed"]
-# (Daniel, 2026-10-26). Teammate-owned mail is never in the dataset.
+# (operator, 2026-10-26). Teammate-owned mail is never in the dataset.
 PLAN_ID_RE = re.compile(r"^[A-Za-z0-9._-]{8,120}$")
 MAX_PLAN_BYTES = 2_000_000
 ZERO_SLUG = "zero"
@@ -234,7 +234,7 @@ def register(app: FastAPI, templates: Any, common_context: Callable[..., dict[st
                 ts = now_et().isoformat()
                 payload = {"plan_id": plan["plan_id"], "path": str(path), "chunk": plan["source"]["chunk"],
                            "totals": plan.get("totals", {}), "checksum": plan["checksum"],
-                           "note": "Bulk cleanup plan. Archive first; Trash/Unsub only after Daniel confirms counts."}
+                           "note": "Bulk cleanup plan. Archive first; Trash/Unsub only after user confirms counts."}
                 with conn:
                     cur = conn.execute(
                         """INSERT INTO actions (item_id, bot_id, type, payload_json, author, status,

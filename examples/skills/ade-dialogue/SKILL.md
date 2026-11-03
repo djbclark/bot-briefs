@@ -9,18 +9,18 @@ description: >-
   fan-out without argument (use `bigteam`).
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/dialogue`](https://github.com/djbclark/djbclark-ade/tree/master/skills/dialogue); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/dialogue`](https://github.com/<USER>/local-ade/tree/master/skills/dialogue); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
 >
-> **Mac-side reference.** This skill drives tools that run on djbclark's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present.
+> **Mac-side reference.** This skill drives tools that run on the operator's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present.
 
 # dialogue — several models argue, one artifact, one final word
 
-Canonical copy: `~/src/djbclark-ade/skills/dialogue/` (git: `~/src/djbclark-ade`);
+Canonical copy: `~/src/ade/skills/dialogue/` (git: `~/src/ade`);
 every TUI links it directly (skill-everywhere).
 Born 2026-10-10 from the hiwymi `spec/ai-heaven` run (Grok 4.7, Claude Fable 5.1,
 GPT-6 Astra; 17 turns, 5 phases). The operator ruled that the skill is built from that

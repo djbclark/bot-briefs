@@ -8,14 +8,14 @@ description: >-
   surfaces them on request.
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/todo`](https://github.com/djbclark/djbclark-ade/tree/master/skills/todo); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/todo`](https://github.com/<USER>/local-ade/tree/master/skills/todo); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
 >
-> **Mac-side reference.** This skill drives tools that run on djbclark's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present. The box's basic-memory MCP may not be the Mac's "main" pool; check before writing.
+> **Mac-side reference.** This skill drives tools that run on the operator's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present. The box's basic-memory MCP may not be the Mac's "main" pool; check before writing.
 
 # todo — "what could I work on whenever" surface
 
@@ -51,7 +51,7 @@ the server itself is fine: the client gave up during a restart and does not retr
    `com.example.basic-memory-mcp` and its watchdog
    (`~/Library/Logs/basic-memory-mcp/`), and restart with
    `launchctl kickstart -k gui/$(id -u)/com.example.basic-memory-mcp`.
-2. **If the server answers but this session's tools are gone**, tell djbclark to
+2. **If the server answers but this session's tools are gone**, tell the operator to
    run `/mcp` and reconnect `basic-memory` (an agent cannot reconnect its own
    client).
 3. **Don't block on it — write the note as a file.** Notes are plain Markdown in
@@ -73,7 +73,7 @@ the server itself is fine: the client gave up during a restart and does not retr
 4. To read the list without MCP: `bm tool search-notes "todo-item"`, or
    `grep -l 'status: open' ~/ops/<PRIVATE_REPO>/memory/todo/*.md`.
 5. **Keyword search over every project's todo notes** (exact, FTS5, no MCP,
-   since 2026-10-09): `python3 -I ~/src/djbclark-ade/skills/session-finder/session-history.py
+   since 2026-10-09): `python3 -I ~/src/ade/skills/session-finder/session-history.py
    --agent todo <words>` — prints `OPEN`/`closed`, title and note path; without
    `--agent todo` the todos rank next to the agent sessions that worked on the
    topic (the `session-finder` skill).
@@ -98,7 +98,7 @@ the surface stays accurate without losing history.
 ## Coding tasks carry a paste-ready prompt (standing rule, 2026-10-03)
 
 When the item is a **coding task** (anything that ends in editing a repo), the
-note must include a `## Prompt` section: a prompt djbclark can paste into **any
+note must include a `## Prompt` section: a prompt the operator can paste into **any
 Claude agent started from any working directory** and have it succeed with no
 other context. Write it so that:
 

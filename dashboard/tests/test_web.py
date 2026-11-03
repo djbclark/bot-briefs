@@ -26,12 +26,12 @@ def test_web_auth(client: TestClient) -> None:
         "/",
         headers={
             "Tailscale-User-Login": "user@example.com",
-            "Tailscale-User-Name": "Daniel Clark",
+            "Tailscale-User-Name": "Test Operator",
             "X-Forwarded-For": "100.64.0.1",
         },
     )
     assert r.status_code == 200
-    assert "Daniel Clark" in r.text
+    assert "Test Operator" in r.text
 
 
 def test_web_pages_render_200(client: TestClient) -> None:

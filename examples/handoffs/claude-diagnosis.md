@@ -1,6 +1,6 @@
-<!-- Handoff: diagnosis prompt (dashboard down) given to Claude Code. EXAMPLE FROM DANIEL, DO NOT USE AS-IS: contains Daniel-specific hosts/paths; adapt. -->
+<!-- Handoff: diagnosis prompt (dashboard down) given to Claude Code. EXAMPLE TEMPLATE, DO NOT USE AS-IS: contains operator-specific hosts/paths; adapt. -->
 
-Task: the Bot Briefs dashboard at https://grok-bot-box.<tailnet>.ts.net/ is unreachable (reported by Daniel Clark, Sat Oct 31 2026 10:50 AM ET). Diagnose the root cause and fix it. You own this fix; Chief of Staff deliberately did not touch anything.
+Task: the Bot Briefs dashboard at https://grok-bot-box.<tailnet>.ts.net/ is unreachable (reported by <OPERATOR_NAME>, Sat Oct 31 2026 10:50 AM ET). Diagnose the root cause and fix it. You own this fix; Chief of Staff deliberately did not touch anything.
 
 What Chief of Staff observed (read-only):
 - Dashboard app itself is fine: `curl http://127.0.0.1:8642/api/reports` returns 200.
@@ -12,6 +12,6 @@ What Chief of Staff observed (read-only):
 
 Known history (memory): on 2026-10-24 the same symptom happened because the box tailscaled lost its control-plane connection (Self.Online=false, no netmap) while local checks passed; restarting tailscaled fixed it, and a watchdog `wd-ts-health` was extended to fail on Self.Online=false and restart after 4 min. Check why that watchdog did not recover this time (find it under /home/box/bin or crontab/systemd user units; read its logs). Also check: DNS resolution of the ts.net name from the box, tailscale netcheck, node key expiry, whether the <TAILNET-IP> node is online in `tailscale status`, and logs of tailscaled (find where it logs).
 
-Rules: restarting tailscaled and the dashboard on the box is allowed and expected if needed; do not touch Daniel's herdr sessions; do not delete data or state; do not change anything on Daniel's Mac; do not log out of tailscale or remove the node (re-auth would need Daniel). If a fix needs Daniel (for example re-authentication or a key approval), stop and say exactly what he must do. Verify the fix by fetching the https URL (expect the login page or a 200/302/401 from the dashboard, not 000) and, if possible, state whether it is reachable from the tailnet side.
+Rules: restarting tailscaled and the dashboard on the box is allowed and expected if needed; do not touch the operator's herdr sessions; do not delete data or state; do not change anything on the operator's Mac; do not log out of tailscale or remove the node (re-auth would need the operator). If a fix needs the operator (for example re-authentication or a key approval), stop and say exactly what he must do. Verify the fix by fetching the https URL (expect the login page or a 200/302/401 from the dashboard, not 000) and, if possible, state whether it is reachable from the tailnet side.
 
 Report: root cause, what you changed, how you verified, and whether the watchdog needs a fix (and make that fix if it is small and safe). Keep the report short and in plain words.

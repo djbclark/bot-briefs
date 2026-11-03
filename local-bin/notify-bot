@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# notify-bot: send a message to one of Daniel's Grok Bot bots (wakes it via its webhook routine).
+# notify-bot: send a message to one of the operator's Grok Bot bots (wakes it via its webhook routine).
 # Usage: notify-bot <botname> [-f FROM] [-m MODEL] [-s SUBJECT] [-r] [-n] "message text"
 #        notify-bot --list        bot names from ~/.config/agent-webhook/bots.json and configured yes/no
 #   -r  reply wanted (the bot answers by starting a new ACP turn in your cwd)
@@ -7,7 +7,7 @@
 # Env (box secrets, never print them): AGENT_WEBHOOK_<BOT>_URL, AGENT_WEBHOOK_<BOT>_KEY,
 #   optional AGENT_WEBHOOK_<BOT>_HEADER (BOT = name uppercased, - -> _).
 #   Also read from $HOME/.config/agent-webhook/secrets.env (see above) if present.
-#   techno-euphora only: falls back to unsuffixed AGENT_WEBHOOK_URL/_KEY/_HEADER.
+#   project-bot only: falls back to unsuffixed AGENT_WEBHOOK_URL/_KEY/_HEADER.
 set -euo pipefail
 REG="${AGENT_WEBHOOK_REGISTRY:-$HOME/.config/agent-webhook/bots.json}"
 # Optional secrets file (chmod 600, never print): KEY=VALUE lines for AGENT_WEBHOOK_* vars. Values already in the
@@ -28,12 +28,12 @@ var(){ local n="$1" s="$2" v="AGENT_WEBHOOK_${1}_$2"; if [[ -n "${!v:-}" ]]; the
 [[ $# -ge 1 ]] || { usage; exit 2; }
 case "$1" in
   -h|--help) usage; exit 0;;
-  --list) for b in $(bots); do U=$(tr a-z- A-Z_ <<<"$b"); FALLBACK=0; [[ $b == techno-euphora ]] && FALLBACK=1
+  --list) for b in $(bots); do U=$(tr a-z- A-Z_ <<<"$b"); FALLBACK=0; [[ $b == project-bot ]] && FALLBACK=1
             [[ -n $(var "$U" URL) && -n $(var "$U" KEY) ]] && c=yes || c=no; echo "$b configured=$c"; done; exit 0;;
 esac
 BOTNAME="$1"; shift
 bots | grep -qxF "$BOTNAME" || { echo "notify-bot: unknown bot '$BOTNAME' (see notify-bot --list)" >&2; exit 2; }
-U=$(tr a-z- A-Z_ <<<"$BOTNAME"); FALLBACK=0; [[ $BOTNAME == techno-euphora ]] && FALLBACK=1
+U=$(tr a-z- A-Z_ <<<"$BOTNAME"); FALLBACK=0; [[ $BOTNAME == project-bot ]] && FALLBACK=1
 FROM="${NOTIFY_FROM:-unknown-agent}"; MODEL="${NOTIFY_MODEL:-}"; SUBJECT=""; REPLY=false; DRY=0
 while getopts "f:m:s:rnh" o; do case $o in f) FROM=$OPTARG;; m) MODEL=$OPTARG;; s) SUBJECT=$OPTARG;; r) REPLY=true;; n) DRY=1;; h) usage; exit 0;; *) usage; exit 2;; esac; done
 shift $((OPTIND-1)); MSG="${*:-$(cat)}"

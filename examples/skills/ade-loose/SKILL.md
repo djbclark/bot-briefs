@@ -8,9 +8,9 @@ description: >-
   everything?", or unprompted before a handoff or at the end of a long session.
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/loose`](https://github.com/djbclark/djbclark-ade/tree/master/skills/loose); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/loose`](https://github.com/<USER>/local-ade/tree/master/skills/loose); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
@@ -246,11 +246,11 @@ A built-in like `/quit` is not a skill, but you can queue it yourself (operator,
 2026-10-09: "you should actually be able to run /quit yourself"): when he picks
 finish, write the final results as the last message so they stay readable, finish
 everything first (commits pushed, no pending reads), then run
-`~/src/djbclark-ade/bin/self-slash --finish` as the last action and end the turn
+`~/src/ade/bin/self-slash --finish` as the last action and end the turn
 at once. On herdr and Orca that is the old `/quit`; on Paseo `/quit` does nothing
 (it reaches Claude as plain text, seen twice 2026-10-20), so `--finish` waits for
 idle and archives this agent without `--force` (it stays under "Archived agents",
-and the operator can still read the final message). djbclark, 2026-10-20: "if there
+and the operator can still read the final message). operator, 2026-10-20: "if there
 is nothing to continue to just clear context but in a way that the human can still
 read the final results". If the handoff was chosen and it was run document-only,
 offer the finish prompt again once it is written.
@@ -260,7 +260,7 @@ fires (+140k since the start or last compaction, or 217k total) or he picked it,
 because context looks large: each compaction costs ~150k+ token-equivalents
 (`memory/feedback_self_compact.md` item 7). Then, if you are a Claude session in a herdr pane or an
 Orca terminal (his standing say-so since 2026-10-09, `memory/feedback_self_compact.md`), write down
-what the next turn needs, run `~/src/djbclark-ade/bin/self-slash "/compact <focus>"`
+what the next turn needs, run `~/src/ade/bin/self-slash "/compact <focus>"`
 and end the turn at once. `self-slash` refuses outside herdr and Orca, or when his
 input box holds a draft; then ask him to type it. Grok Bot: skip (G6).
 
@@ -289,7 +289,7 @@ herdr, Orca, Paseo, launchd, Keychain, `hermes-ping` or Mac process list.
   result you never read, and routines you scheduled.
 - **G4 Durable places and always-loaded files.** Bot memory, the shared skills
   in `/home/box/agent-data/workflows/` (the parent writes those through its
-  skill tool; a sync-managed `ade-*` copy is changed upstream in djbclark-ade,
+  skill tool; a sync-managed `ade-*` copy is changed upstream in local-ade,
   never in place) and the repo docs the finding belongs to.
 - **G5 Upstream issues.** Search with `gh search issues`/`gh api` or the
   GitHub connector, and Forgejo's API for forgejo.mit.edu. Filing the issue is

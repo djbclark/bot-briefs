@@ -3,20 +3,20 @@ name: sipb-llm-bench
 description: "Benchmark a model on MIT SIPB LLMs (or any OpenAI-compatible Open WebUI/Ollama server) as an agentic-coding backend: speed probes, a tool-call conformance check, and two real tool-using tasks scored by running the tests. Use to test a new or upgraded model, re-run after a server upgrade, or compare models; also for \"does model X work for coding agents on SIPB LLMs\", /sipb-llm-bench."
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/sipb-llm-bench`](https://github.com/djbclark/djbclark-ade/tree/master/skills/sipb-llm-bench); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/sipb-llm-bench`](https://github.com/<USER>/local-ade/tree/master/skills/sipb-llm-bench); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
 >
-> Source repo: forgejo.mit.edu/djbclark/sipb-llms (box clone /home/box/src/sipb-llms). Needs SIPB_API_KEY, not set on this box (2026-10-23); ask before benchmarking.
+> Source repo: forgejo.mit.edu/<USER>/sipb-llms (box clone /home/box/src/sipb-llms). Needs SIPB_API_KEY, not set on this box (2026-10-23); ask before benchmarking.
 
 # sipb-llm-bench
 
 Measures whether a model on the SIPB LLMs server (or any OpenAI-compatible endpoint) can
 drive a terminal coding agent. It is the harness behind
-[report/REPORT.md](https://forgejo.mit.edu/djbclark/sipb-llms/src/branch/main/report/REPORT.md),
+[report/REPORT.md](https://forgejo.mit.edu/<USER>/sipb-llms/src/branch/main/report/REPORT.md),
 packaged so SIPB admins and users can run it on other models. Everything is in this directory:
 `bench.py`, `toolcall_conformance.py`, `tasks/` (prompts, the broken-repo template, a short
 rules file), `crushrc.example`.
@@ -41,13 +41,13 @@ everyone 10-19 s and a busy server queues silently for minutes.
 3. Network: the server is often MITnet or VPN only (`https://llms-dev-1.mit.edu/api`).
    Override with `SIPB_BASE=https://host/api` for another server.
 4. For the two agent tasks (`--probes-only` skips them and needs no runner): an agent runner. The default is
-   [`acp-run crush`](https://github.com/djbclark/djbclark-ade/tree/master/tools/acp-run) with a Charm Crush
+   [`acp-run crush`](https://github.com/<USER>/local-ade/tree/master/tools/acp-run) with a Charm Crush
    build that has an ACP server and auto-approve (PRs
    [#2450](https://github.com/charmbracelet/crush/pull/2450) and
    [#3909](https://github.com/charmbracelet/crush/pull/3909)). Any other agent works through
    `--runner` (below).
 5. Strongly recommended: the loopback proxy
-   [proxy/](https://forgejo.mit.edu/djbclark/sipb-llms/src/branch/main/proxy)
+   [proxy/](https://forgejo.mit.edu/<USER>/sipb-llms/src/branch/main/proxy)
    (stdlib Python). Open WebUI 0.6.30 ends tool-call streams with `finish_reason: "stop"`,
    which makes OpenAI-style agents stop after the first tool call. Without the proxy (or a
    fixed server) the agent tasks fail for reasons that are not the model's fault.
@@ -183,12 +183,12 @@ python3 bench.py advanced --models MODEL
 
 ## Updating the report (or branching it) after a run
 
-The published report is [report/REPORT.md](https://forgejo.mit.edu/djbclark/sipb-llms/src/branch/main/report/REPORT.md)
+The published report is [report/REPORT.md](https://forgejo.mit.edu/<USER>/sipb-llms/src/branch/main/report/REPORT.md)
 with its raw rows in `report/bench-snapshot/results.jsonl`. After testing a model, update it
 in the same sitting, on a branch of its own so the published copy stays as it was until
 someone reviews the change. `report/build_page.py` and `report/template.html` render it as a web page.
 
-1. Branch: in a clone of `https://forgejo.mit.edu/djbclark/sipb-llms.git` (or your fork),
+1. Branch: in a clone of `https://forgejo.mit.edu/<USER>/sipb-llms.git` (or your fork),
    `git switch -c sipb-bench/MODEL-YYYY-MM-DD`. (Updating in place on `main` is fine for your
    own rerun of a model already in the report.)
 2. Data: append only this model's new rows to `report/bench-snapshot/results.jsonl`
@@ -203,7 +203,7 @@ someone reviews the change. `report/build_page.py` and `report/template.html` re
       failure, a new `null`/200 body, a stall); section 7.1 if the conformance script now
       passes or fails against the server directly;
    6. section 8: link anything new you added (new tasks, new rules file).
-4. Page: `uv run --with markdown report/build_page.py ../../report/REPORT.md out.html --meta '2026-10-12 · Open WebUI X · Ollama Y · host' --base-url https://forgejo.mit.edu/djbclark/sipb-llms/src/branch/main/report/`.
+4. Page: `uv run --with markdown report/build_page.py ../../report/REPORT.md out.html --meta '2026-10-12 · Open WebUI X · Ollama Y · host' --base-url https://forgejo.mit.edu/<USER>/sipb-llms/src/branch/main/report/`.
    Publish `out.html` wherever the previous page lives (it is one self-contained file).
 5. `git add -A && git commit -m "sipb-llms report: add MODEL"`, push the branch, and open a
    pull request (or send the branch to the admins). Merge to `main` once reviewed.

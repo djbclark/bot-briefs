@@ -47,7 +47,7 @@ Look at them before writing parsers. Brief markdown varies by bot. Examples of i
 00000000-0000-4000-8000-000000000007 chess "Chess"
 00000000-0000-4000-8000-000000000008 pika "Pika"
 00000000-0000-4000-8000-000000000009 friends "Friends"
-00000000-0000-4000-8000-000000000010 te "Techno Euphora"
+00000000-0000-4000-8000-000000000010 project "Project"
 00000000-0000-4000-8000-000000000011 oneoffs "One-offs"
 00000000-0000-4000-8000-000000000012 coding "Coding"
 Bots may be referred to by slug, name (case-insensitive) or uuid everywhere.

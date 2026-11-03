@@ -8,26 +8,26 @@ description: >-
   or on "which AI should do X", "what models do we have", aiuse output.
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/model-routing`](https://github.com/djbclark/djbclark-ade/tree/master/skills/model-routing); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/model-routing`](https://github.com/<USER>/local-ade/tree/master/skills/model-routing); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
 >
-> **Mac-side reference.** This skill drives tools that run on djbclark's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present.
+> **Mac-side reference.** This skill drives tools that run on the operator's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present.
 
 # Model routing on this machine
 
 Canonical source of this skill: `skills/model-routing/SKILL.md` in the
-djbclark-ade repo (`~/src/djbclark-ade`, github.com/djbclark/djbclark-ade).
+local-ade repo (`~/src/ade`, github.com/<USER>/local-ade).
 `~/.claude/skills/model-routing/` and every other TUI's copy are symlinks to it
-via a direct skill-everywhere link (`~/src/djbclark-ade/skills/model-routing`),
+via a direct skill-everywhere link (`~/src/ade/skills/model-routing`),
 so there is nothing to keep in sync.
 
 The canonical, dated matrix lives at
-`~/orca/projects/djbclark-ade/docs/model-routing.md` (repo
-djbclark/djbclark-ade). Read it first; this skill carries the stable
+`~/orca/projects/local-ade/docs/model-routing.md` (repo
+<USER>/local-ade). Read it first; this skill carries the stable
 method, not the volatile numbers.
 
 Failure chains (what runs when the chosen model fails) are not here.
@@ -36,7 +36,7 @@ skill's snapshot in the same turn.
 
 ## Probes (prefer these over a hand-kept snapshot; aiuse's own cache is fine while fresh)
 
-- **`aiuse --available`** (aiuse 3.1.4+, github.com/djbclark/aiuse) — the routing
+- **`aiuse --available`** (aiuse 3.1.4+, github.com/<USER>/aiuse) — the routing
   shortlist: only usable pools, one line per vendor AND model family, sorted by
   headroom, every window as "X% used / Y% left". Reads the snapshot cache (<1 s,
   age on the first line); `--live` forces a ~30-60 s collect; `--json` is the
@@ -47,7 +47,7 @@ skill's snapshot in the same turn.
   agent/model and caches a pass for ten minutes, since no snapshot sees a pool
   drained in the last few minutes. `aiuse serve` defaults to
   port 28787 and is not running here.
-  **Agents always run it with `--json`, stderr kept out (`2>/dev/null`)** (djbclark,
+  **Agents always run it with `--json`, stderr kept out (`2>/dev/null`)** (operator,
   2026-10-17): the human table is not a contract and its format changes. The
   contract is `aiuse schema` (docs/json-contract.md). Read `.available[]`:
   `provider`, `pool_family`, `cli_binary`, `usable_now`, `headroom_percent`,
@@ -150,7 +150,7 @@ skill's snapshot in the same turn.
 Go Plus is a $40 subscription with shared allowance, not a free model bundle.
 Use `config/go-model-policy.json` as the cost classification. Routine routing
 uses MiniMax M3 for bulk and GPT-6 Luna for mechanical work. **No code slice goes to
-opencode-go** (djbclark 2026-10-30): `route`/`plan` never name it for `code`; DeepSeek V4.1
+opencode-go** (operator 2026-10-30): `route`/`plan` never name it for `code`; DeepSeek V4.1
 Flash stays only the main-loop substrate model (`route_agent.py substrate`). Luna stays
 routine: a smaller model allowance alone does not establish high per-token cost. Unknown Go
 model IDs are refused until classified.
@@ -375,7 +375,7 @@ acp-run <agent> --info      # its models, modes and auth methods
 ```
 
 **For a slice that must deliver a report, call `acp-dispatch` instead of
-`acp-run` directly** (`bin/acp-dispatch` in djbclark-ade, on PATH; 2026-10-08):
+`acp-run` directly** (`bin/acp-dispatch` in local-ade, on PATH; 2026-10-08):
 `acp-dispatch <agent> --model M --kind K --name N --task T -C <dir> -f <brief> [--perm P]
 [--effort L] [--context SIZE] [--timeout S]`. It makes `--model` mandatory
 except for zcode (accepted, still optional) and `--kind` mandatory on a fresh
@@ -510,7 +510,7 @@ is subject to the burst budget in "agy has a burst limit" above.
 
 **Default permission mode: yolo or its equivalent, for every agent however launched** (standing rule 2026-10-03, `home-agents.md`). Gate only a clearly security-sensitive slice (prompt-injection exposure: `--perm read-only` for a slice that reads, `--perm deny` for text-only; `--role advise` refuses `deny`, 2026-10-19), and say so (operator 2026-10-15; a plain review runs yolo with a read-only brief and a diff check); acp-run has no other gate since 2026-10-14 (bigteam checks file ownership from the diff after the run). `-s read-only` on codex likewise only for those calls; work slices use `--dangerously-bypass-approvals-and-sandbox`.
 
-**Security-sensitive PR that Codex will not or cannot review** (no Daybreak access, a business-only Codex program; djbclark 2026-10-24; `memory/feedback_security_prs_codex_refuses_go_open_weight.md`): review the diff with a frontier open-weight model unlikely to refuse, and once its findings are fixed drop the Codex retry (retry only if another agent investigating the failure wants the PR as a test case). First choice `acp-dispatch zcode --kind code --role advise --model GLM-5.3 --effort high`, second opinion `opencode-go/kimi-k3` or `opencode-go/deepseek-v4-pro`. Pass the diff as a file in the brief, review read-only, and quote the verdict in the PR body like an `adversary` verdict. First used on getpaseo/paseo PR 7817 (GLM-5.3 found two real defects Codex never reached).
+**Security-sensitive PR that Codex will not or cannot review** (no Daybreak access, a business-only Codex program; operator 2026-10-24; `memory/feedback_security_prs_codex_refuses_go_open_weight.md`): review the diff with a frontier open-weight model unlikely to refuse, and once its findings are fixed drop the Codex retry (retry only if another agent investigating the failure wants the PR as a test case). First choice `acp-dispatch zcode --kind code --role advise --model GLM-5.3 --effort high`, second opinion `opencode-go/kimi-k3` or `opencode-go/deepseek-v4-pro`. Pass the diff as a file in the brief, review read-only, and quote the verdict in the PR body like an `adversary` verdict. First used on getpaseo/paseo PR 7817 (GLM-5.3 found two real defects Codex never reached).
 
 **Authority for launch flags:** Orca's roster,
 `~/Library/Application Support/orca/profiles/local-default/orca-data.json`
@@ -533,7 +533,7 @@ TUI with `&` inherits the harness's stdin and codex blocks on it forever.
 | codex (GPT-6 Astra default) | `codex exec -s read-only -C <dir> "<prompt>" < /dev/null > out 2>&1` | without `< /dev/null`: prints `Reading additional input from stdin...` and hangs with no timeout. |
 | agy (Antigravity) | `agy --dangerously-skip-permissions --print-timeout 120s -p='<prompt>' < /dev/null > out 2>&1` — **attach the prompt with `-p=`**, which is order-independent and cannot be confused with a flag. `-p`/`--print`/`--prompt` is a *required-value string flag*, not a boolean. | `agy -p` with no value: exits 2, `flag needs an argument: -p`. `agy -p --effort high` (value-less `-p` before another flag): **since 1.1.18 this is a clean exit 2** naming the mistake — *"-p took \"--effort\" as its prompt…"* — and before 1.1.18 it silently ran with `--effort` as the prompt. Verified on 1.2.16, 2026-10-03. Headless still needs `--dangerously-skip-permissions` or tool permissions auto-deny (by design, hardened in 1.2.15). **`RESOURCE_EXHAUSTED (code 429)` with `aiuse` showing headroom** (2026-10-03: every CLI model, 15:42 to 23:50+, while ACP worked): a CLI burst lockout, not an empty pool; the CLI retries 8 times (~2m20s) so it looks like a hang, and `--print-timeout` cuts it with exit 0 and partial output. Check `grep 'attempt [0-9]* failed' ~/.gemini/antigravity-cli/log/cli-*.log` and switch to `acp-run agy`. |
 | copilot | `copilot -p "<prompt>" --model auto --allow-all-tools --allow-all-paths --silent < /dev/null > out 2>&1` | fine as-is. **Do not add `--reasoning-effort` with `--model auto`**: exits 1, `Model "auto" does not support reasoning effort configuration` (2026-09-26). Name a concrete model if you want an effort level. |
-| opencode (Go subscription) | Use `acp-dispatch opencode` with an explicitly qualified routine model such as `opencode-go/minimax-m3` (bulk) or `opencode-go/gpt-6-luna` (mechanical); never a code slice (djbclark 2026-10-30). Expensive models require the bounded advisory form below; direct `opencode run` bypasses the ACP cost gate. | **`opencode/<model>` is the prepaid Zen catalogue, not Go**: every `opencode/*` model except `big-pickle` fails with `Upstream request failed: Insufficient account funds`. `big-pickle` answers but on a review prompt spent its run trying to install pytest and returned nothing — steer it with "do not run tests or install anything". **Side effect:** every `opencode run` rewrites `./opencode.json` in the cwd (adds a `$schema` key) — `git checkout -- opencode.json` afterwards in repos that track it. |
+| opencode (Go subscription) | Use `acp-dispatch opencode` with an explicitly qualified routine model such as `opencode-go/minimax-m3` (bulk) or `opencode-go/gpt-6-luna` (mechanical); never a code slice (operator 2026-10-30). Expensive models require the bounded advisory form below; direct `opencode run` bypasses the ACP cost gate. | **`opencode/<model>` is the prepaid Zen catalogue, not Go**: every `opencode/*` model except `big-pickle` fails with `Upstream request failed: Insufficient account funds`. `big-pickle` answers but on a review prompt spent its run trying to install pytest and returned nothing — steer it with "do not run tests or install anything". **Side effect:** every `opencode run` rewrites `./opencode.json` in the cwd (adds a `$schema` key) — `git checkout -- opencode.json` afterwards in repos that track it. |
 | cursor-agent | `cursor-agent -p --yolo --output-format text "<prompt>" < /dev/null > out 2>&1` | without `--trust` (or `--yolo`/`-f`) in a directory Cursor hasn't trusted: exits 1 with a "Workspace Trust Required" prompt and no review. |
 | zai (zcode) | `zcode -p "<prompt>" < /dev/null > out 2>&1` — `-p` already defaults to `--mode yolo`; `--attach <file>` works (verified 2026-09-30). Inlining the file into the prompt is equally fine. | **Never pass `--mode build` (or `--mode edit`) headless**: it gates every tool behind an approval no one can give, so the run hangs indefinitely — process alive, ~0 CPU, no `zcode-cli` worker doing work, zero output — until it's killed (seen 2026-09-30, `--mode build --attach`). The default yolo mode auto-approves. The `ZCode Built-in skipped (not-due)` lines on stderr are a benign memory-heartbeat, not an error. |
 
@@ -582,7 +582,7 @@ Herdr-hosted TUIs (driving agents in Herdr panes; verified 2026-09-26):
 - `herdr pane read` prints plain text; every other command prints one JSON
   envelope, `{"error":…}` **with exit 0** on failure — parse the envelope.
 - `herdr agent prompt <target> "/exit"` cleanly ends a Claude session and
-  returns the pane to its shell; `bin/herdr-sleeper` in djbclark-ade
+  returns the pane to its shell; `bin/herdr-sleeper` in local-ade
   builds on this (see docs/agent-sleep.md). Never `/exit` a pane whose
   composer holds unsent text: the draft dies with the process.
 - A prompt can land unsubmitted (`agent_prompt_stalled`, or the text sits on
@@ -668,7 +668,7 @@ method that runs the waves.
        the floor, never at one row's small measurement, and every window of
        the reading is then checked at it.
    1d. **Fable at `xhigh`/`max` almost never runs**: `acp-dispatch` refuses it
-       without `ACP_OPERATOR_APPROVED=fable-xhigh`. Ask djbclark first; the
+       without `ACP_OPERATOR_APPROVED=fable-xhigh`. Ask the operator first; the
        `fable-deep` agent runs at `high`.
    1e. **Frontier allowance** (2026-10-27, operator; a standing rule, no profile
        needed: `config/gates.toml` `[frontier]` is the baseline, ruled "Frontier
@@ -800,7 +800,7 @@ method that runs the waves.
    for `github` slices, GitHub-context work that `gh` from any other agent cannot
    do. A missing or stale copilot reading means do not use (`route_agent.py`
    fails closed). **Grok is no longer a reserve (2026-10-18):** GrokBot (the
-   cloud Chief of Staff) moved to its own separate Cursor pool when djbclark
+   cloud Chief of Staff) moved to its own separate Cursor pool when the operator
    upgraded to the $60 Cursor plan, so the `grok` TUI is an ordinary
    subscription pool (`realtime-web`, `research`, `bulk`; no floor), ranked
    behind the burn-first pools; never route into the GrokBot pool (aiuse
@@ -854,7 +854,7 @@ method that runs the waves.
     contexts. So: **a lead that does judgment work runs on Opus 5.5 at high; a lead that
     only drives a pipeline (PR loops, waiters, merges) runs on Sonnet 5.5 at medium
     (`pipeline_effort` in `[lead]`), and goes to high only for a judgment turn; never on
-    Fable** (approved by djbclark 2026-10-23). Raise the effort for the turn with
+    Fable** (approved by the operator 2026-10-23). Raise the effort for the turn with
     `/effort high` (Claude Code) or the Paseo thinking setting, and drop back to medium
     after; an effort change keeps the prompt cache (Anthropic: "tuning effort is often a
     better lever than switching models"). Fable
@@ -913,7 +913,7 @@ The harness writes the options, code applies a threshold set by risk (cheap
 to undo about 0.6, a failed step about 0.8, irreversible means the operator
 decides), and anything below the threshold goes up a rung, never to a guess.
 Retry caps are counters in code, not sentences in a prompt. Reasons, sources
-and the shadow-mode rollout: `docs/orchestration-practices.md` (djbclark-ade).
+and the shadow-mode rollout: `docs/orchestration-practices.md` (local-ade).
 
 Standing orders that pair with this: continuous operation over handoff
 rituals; flag best-practice deviations to the operator (<PRIVATE_REPO>

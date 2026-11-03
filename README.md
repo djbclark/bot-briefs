@@ -1,9 +1,9 @@
 # Bot Briefs System: re-creation kit for a Grok Bot Chief of Staff
 
 > **TO THE CHIEF OF STAFF (CoS) BOT READING THIS: this file is your main prompt.**
-> Your user pointed you at this repo so you can walk them, step by step, through re-creating Daniel Clark's
+> Your user pointed you at this repo so you can walk them, step by step, through re-creating the operator's
 > bot-fleet + Chief of Staff + Bot Briefs dashboard system **for them**, adapted to their life, accounts and tools.
-> Daniel is the person this system was copied from; **he is not your user.** Read this whole README before doing anything.
+> The operator is the person this system was copied from; **they are not your user.** Read this whole README before doing anything.
 > **Security first:** read [SECURITY.md](SECURITY.md): bots read attacker-controllable content, so use least privilege,
 > per-bot tokens, read-only bot-triggered agents (set it; `acp-run` defaults to yolo), and never put personal data in examples.
 
@@ -26,7 +26,7 @@ Two-minute pitch for the user: [docs/executive-summary.md](docs/executive-summar
    `ROOT=/tmp/stage` stages `scripts/install-dirs.sh`). Never pipe this repo into a shell wholesale.
 4. **Ask before** anything destructive, anything that sends a message/email/post, spends money, creates accounts,
    exposes a service, changes networking, or overwrites a file. Bots draft; the user approves (Grok Bot approval cards).
-5. **Personalize examples.** Everything marked `EXAMPLE FROM DANIEL, DO NOT USE AS-IS` (bot descriptions, routine
+5. **Personalize examples.** Everything marked `EXAMPLE TEMPLATE, DO NOT USE AS-IS` (bot descriptions, routine
    prompts, rules, names, accounts, agent ids, hosts, times) must be SHOWN to the user as an example; then ask the
    interview questions printed next to it, draft THEIR version, and get an explicit OK before saving it anywhere.
    Generic machinery (scripts, dashboard code, CLI usage, watchdog layout) can be used as-is after adapting paths,
@@ -63,7 +63,7 @@ it through the GitHub connector. All paths below are relative to the repo root.
 | [opencli-plugins/](opencli-plugins/) | Shortwave opencli plugin, Saner MCP server | 8 |
 | [config/](config/) | placeholders: secrets, bots registry, ssh config example, profile template, **manifest.tsv** (copy map) | all |
 | [scripts/](scripts/) | `install.sh` (copy per phase, dry by default), installers, start/serve helpers, `verify.sh` | all |
-| [examples/](examples/) | Daniel's bots, routines, handoffs to other agents, skills, reports (EXAMPLES) | 5, 6, 7, 9, 13 |
+| [examples/](examples/) | Example bots, routines, handoffs to other agents, skills, reports (EXAMPLES) | 5, 6, 7, 9, 13 |
 
 Copying files: `scripts/install.sh --list`, then `scripts/install.sh --phase N` (dry run), then `--apply` after the user
 agrees. Existing files are never overwritten unless `--force` (which saves a `.bak-<timestamp>` first).
@@ -112,13 +112,13 @@ Open questions for the user:
 Secrets the user still has to create: (names only, never values)
 ```
 
-## 6. Examples (all `EXAMPLE FROM DANIEL, DO NOT USE AS-IS`)
+## 6. Examples (all `EXAMPLE TEMPLATE, DO NOT USE AS-IS`)
 
 - Bots: [examples/bots/README.md](examples/bots/README.md) (one file per bot, each with interview questions).
 - Routines: [CoS daily list](examples/routines/cos-daily-high-priority.md), [Zero's Gmail triage](examples/routines/zero-gmail-triage.md),
   [Coding webhook](examples/routines/coding-webhook.md), generic [templates](examples/routines/templates.md) (usable after filling placeholders).
 - Handoffs to other agents: [Claude VPS build](examples/handoffs/claude-vps-build.md), [Claude diagnosis](examples/handoffs/claude-diagnosis.md).
-- Skills Daniel wrote: [examples/skills/README.md](examples/skills/README.md) (`bot-report-reply-sheets` is RETIRED).
+- Example skills: [examples/skills/README.md](examples/skills/README.md) (`bot-report-reply-sheets` is RETIRED).
 - Reports: [VPS mirror build report](examples/reports/vps-mirror.md).
 - SSH structure: [config/ssh_config.example](config/ssh_config.example).
 
@@ -126,8 +126,8 @@ Secrets the user still has to create: (names only, never values)
 
 - `config/manifest.tsv` is the single source of truth for "which repo file goes where, with which mode, in which phase".
 - Files under `bin/`, `local-bin/`, `dashboard/`, `watchdogs/`, `shared-docs/`, `opencli-plugins/` are real copies of
-  Daniel's working files (snapshot 2026-11-01), sanitized: secrets and personal details replaced with placeholders, tailnet/public IPs replaced by `<TAILNET-IP>` / `<PUBLIC-IP>`, SSH host aliases and key
-  paths replaced by `<...-alias>` / `<your_key_name>`. Bot names and paths are Daniel's; ids, logins and URLs are
+  The operator's working files (snapshot 2026-11-01), sanitized: secrets and personal details replaced with placeholders, tailnet/public IPs replaced by `<TAILNET-IP>` / `<PUBLIC-IP>`, SSH host aliases and key
+  paths replaced by `<...-alias>` / `<your_key_name>`. Bot names and paths are the operator's; ids, logins and URLs are
   placeholders. Set your own in `config.local.env`.
 - Not included (download/create instead): `htmx.min.js` (fetched by `scripts/dashboard-venv.sh`), Python venvs,
   `node_modules`, databases, logs, `.bak` files, dashboard `dev/samples`, binaries (tailscale, restic, rclone, agents).

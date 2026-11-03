@@ -10,31 +10,31 @@ description: >-
   Also the recipe for a GitHub-sourced repo's CI on free GitHub runners (section 6 item 6).
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/forgejo-ci`](https://github.com/djbclark/djbclark-ade/tree/master/skills/forgejo-ci); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/forgejo-ci`](https://github.com/<USER>/local-ade/tree/master/skills/forgejo-ci); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
 >
-> Source repo: forgejo.mit.edu/djbclark/loopback-port-shim (box clone /home/box/src/loopback-port-shim).
+> Source repo: forgejo.mit.edu/<USER>/loopback-port-shim (box clone /home/box/src/loopback-port-shim).
 
 # Forgejo CI on SIPB Hyades
 
-**Where CI runs (djbclark, 2026-10-18):** CI for a GitHub-sourced repo (Plektra, hermes-agent, herdr, secretspec-sqlite,
+**Where CI runs (operator, 2026-10-18):** CI for a GitHub-sourced repo (Plektra, hermes-agent, herdr, secretspec-sqlite,
 sudo-secretspec, the stayturgid agent) runs on **free GitHub runners** via an orphan `ci/base` branch (workflow + wrapper),
 `ci/run/**` pushes and a `scripts/github-*` wrapper (item 6 below); the private Forgejo copies of those six repos were
 deleted on 2026-10-18 (Forgejo-only branches kept on GitHub as `ci/archive/*`). Hyades/Forgejo CI stays for MIT/SIPB work. Everything below about libkrun, the shim and Hyades images is still true
 for Hyades; it just no longer applies to the six repos above.
 
-Written 2026-10-14 from runs 168-240 on the private test repo `djbclark/plektra-djbclark`.
-**Canonical home: https://forgejo.mit.edu/djbclark/loopback-port-shim** (local `~/src/loopback-port-shim`; this skill is
-`skills/forgejo-ci/` there, reached from `~/src/djbclark-ade/skills/forgejo-ci` by symlink). Paths below are relative to that
-repo. Token, API and git helpers are the `forgejo` skill in djbclark-ade (`forgejo-api`, `git-forgejo`; **never `--help` on
-them**; the scripts in `ci/tools/` find them through `FORGEJO_SCRIPTS`, default `~/src/djbclark-ade/skills/forgejo/scripts`).
+Written 2026-10-14 from runs 168-240 on the private test repo `<USER>/plektra-<USER>`.
+**Canonical home: https://forgejo.mit.edu/<USER>/loopback-port-shim** (local `~/src/loopback-port-shim`; this skill is
+`skills/forgejo-ci/` there, reached from `~/src/ade/skills/forgejo-ci` by symlink). Paths below are relative to that
+repo. Token, API and git helpers are the `forgejo` skill in local-ade (`forgejo-api`, `git-forgejo`; **never `--help` on
+them**; the scripts in `ci/tools/` find them through `FORGEJO_SCRIPTS`, default `~/src/ade/skills/forgejo/scripts`).
 Long-form evidence with run numbers: `docs/runner-notes.md` and the other files in `docs/`.
 Deploying images to Hyades itself (the SSH console, `hyades.json`, `*.sipb.cloud`, SIPB/hyades-action, update tokens) is
-the `hyades-docker` skill in djbclark-ade.
+the `hyades-docker` skill in local-ade.
 
 ## 1. Runner facts
 
@@ -83,7 +83,7 @@ the `hyades-docker` skill in djbclark-ade.
    android-all jars outside Gradle, sets test system properties `robolectric.dependency.repo.url` (the mirror) and
    `robolectric.dependency.repo.id`; without them 1,071 of 1,434 tests failed in `MavenArtifactFetcher` (run 139).
    Plektra's copy: `.forgejo/central-mirror.gradle` on `plk/base` (retired with its Hyades CI; GitHub runners use `.github/ci/central-mirror.gradle` on `ci/base`). Keep to about 4 jobs at once (the runner's capacity).
-4d. **The runner can fail to copy every `uses:` action into the job** (2026-10-20, djbclark/jev-like-hyades runs 1-3):
+4d. **The runner can fail to copy every `uses:` action into the job** (2026-10-20, <USER>/jev-like-hyades runs 1-3):
    `failed to copy directory ".../.cache/act/<hash>/" to container: ... statat .../.eslintignore (or .git): path escapes
    from parent`, then `Cannot find module .../dist/index.js`. It hit `actions/checkout` and SIPB/hyades-action alike, and a
    re-run did not help. Workaround, no `uses:` at all: clone with `git init . && git fetch --depth 1
@@ -91,7 +91,7 @@ the `hyades-docker` skill in djbclark-ade.
    tmpfs on `/var/lib/containers/storage`, `buildah build --format docker --network=host`, `buildah login
    --password-stdin` + `buildah push`, then the `curl -X POST -H "X-Token: …"` update (jev-like-hyades
    `.forgejo/workflows/main.yml`). `--format docker` matters: buildah's default OCI format ignores a Containerfile `SHELL`.
-   Also djbclark/get runs 624-625 (fixed in get `e89f9a1`). Cause: a podman regression in `podman cp` (upstream
+   Also <USER>/get runs 624-625 (fixed in get `e89f9a1`). Cause: a podman regression in `podman cp` (upstream
    [forgejo/runner#1770](https://code.forgejo.org/forgejo/runner/issues/1770) →
    [podman#29805](https://github.com/podman-container-tools/podman/issues/29805), fix in progress
    [buildah#7129](https://github.com/podman-container-tools/buildah/pull/7129); downgrading podman is the stopgap).
@@ -106,12 +106,12 @@ the `hyades-docker` skill in djbclark-ade.
 | Image | Has | Lacks | Use |
 |---|---|---|---|
 | stock `ubuntu` label | git, node, python3, podman | gcc, JDK, SDK | scripts and non-Java jobs |
-| **`ghcr.io/djbclark/ci-image-plektra@sha256:<digest>`** (ours, public, amd64; canonical source `forgejo.mit.edu/djbclark/ci-image-plektra`, mirrored to GitHub for builds) | android-sdk 36, JDK 17, node 18, gcc, git, python3, **`/usr/local/lib/portshim.so`** | nothing Plektra needs | Gradle/Robolectric/Android jobs: no install, no compile |
+| **`ghcr.io/<USER>/ci-image-plektra@sha256:<digest>`** (ours, public, amd64; canonical source `forgejo.mit.edu/<USER>/ci-image-plektra`, mirrored to GitHub for builds) | android-sdk 36, JDK 17, node 18, gcc, git, python3, **`/usr/local/lib/portshim.so`** | nothing Plektra needs | Gradle/Robolectric/Android jobs: no install, no compile |
 | `ghcr.io/cirruslabs/android-sdk:36` | SDK 36, JDK 21, gcc | node, JDK 17 | base of ours; 47 s first pull, cached after |
 | `eclipse-temurin:17-jdk-noble` | JDK 17 | gcc, git, SDK, node | saves nothing |
 | `mingc/android-build-box` | everything | (5.9 GB) | too big |
 
-Our image's digest is printed by its GitHub Actions build-mirror run (`gh run list -R djbclark/ci-image-plektra`; the digest is in the
+Our image's digest is printed by its GitHub Actions build-mirror run (`gh run list -R <USER>/ci-image-plektra`; the digest is in the
 "Verify the pushed image" step). To change the image, edit its Dockerfile and push; update the digest in the workflow. The
 shim source is pinned there by commit (`SHIM_SHA`): bump it when `loopback-port-shim.c` changes.
 
@@ -144,12 +144,12 @@ one:** the client reaches its daemon over loopback, and even `--no-daemon` forks
 
 ## 4. Probing and measuring
 
-0. The workload repo is the public https://forgejo.mit.edu/djbclark/hyades-bench (a copy of the Plektra tree; default checkout
+0. The workload repo is the public https://forgejo.mit.edu/<USER>/hyades-bench (a copy of the Plektra tree; default checkout
    `~/src/hyades-bench`; `BENCH_REPO`/`BENCH_SLUG`/`BENCH_URL` in `ci/tools/bench-env.sh` override). The scripts push and fetch by
    URL, never through a checkout's `forgejo` remote. Run numbers cited elsewhere in this skill are from the deleted private
-   `djbclark/plektra-djbclark` Forgejo repo (its `bench/mit-ci` branch: GitHub `ci/archive/bench-mit-ci`).
+   `<USER>/plektra-<USER>` Forgejo repo (its `bench/mit-ci` branch: GitHub `ci/archive/bench-mit-ci`).
 1. `ci/tools/push-probe.sh WORKFLOW.yml probe/NAME [EXTRA_FILE...]` pushes a probe workflow as a throwaway branch on
-   top of `bench/mit-ci` (extra files land at the repo root); `wait-run.sh SHA OUT` waits (`WAIT_MAX`, `RP`, default `djbclark/hyades-bench`) and saves the
+   top of `bench/mit-ci` (extra files land at the repo root); `wait-run.sh SHA OUT` waits (`WAIT_MAX`, `RP`, default `<USER>/hyades-bench`) and saves the
    log; `push-bench.sh asis|tmpfs|loop BRANCH` derives and pushes the full workflow (`DERIVE_IMAGE=ghcr.io/...@sha256:...`
    uses our image); `run-matrix.sh` does unattended matrices. Run them with `run_in_background`; read `summary.md` only.
 2. Probe sources: in `tests/`: `duplex-probe.c` (blocked recv vs send), `reuse-probe.c` (listener reuse, `REUSE_PORT`, modes
@@ -164,21 +164,21 @@ one:** the client reaches its daemon over loopback, and even `--no-daemon` forks
 
 1. **Search the upstream tracker first** (`gh search issues --json`), with several phrasings: I filed #926 before finding
    #819 and #860 and had to say so.
-2. **File only after testing finishes**; show the draft to djbclark first; label it "prepared with an AI coding assistant,
+2. **File only after testing finishes**; show the draft to the operator first; label it "prepared with an AI coding assistant,
    results reviewed by me"; correct your own errors in the ticket in the same breath.
 3. Build the body with `jq -Rs`/`--rawfile`, check `[ -s file ]` before posting (an empty body once went out through a BSD `sed`
    failure in a pipeline); never read results through a pipe. Use GNU tools (`gsed`, `ggrep`).
-3a. **SIPB tickets: fork only (djbclark, 2026-10-22):** AI output never goes on `SIPB/*`.
-   Full `[AI detail]` report on `djbclark/hyades`; short human draft as that issue's
-   first comment (`forgejo-two-tier-issue --fork-only`); djbclark files upstream
+3a. **SIPB tickets: fork only (operator, 2026-10-22):** AI output never goes on `SIPB/*`.
+   Full `[AI detail]` report on `<USER>/hyades`; short human draft as that issue's
+   first comment (`forgejo-two-tier-issue --fork-only`); the operator files upstream
    himself. Script refuses every `SIPB/*` write. Edit policy on the fork: under an
    hour and nothing after, else new comment; never delete (2026-10-17). History:
    2026-10-14 two-tier filings and later squash/repair live in
    `docs/tickets/two-tier/hyades-N/`. Details: the `forgejo` skill.
-4. Ticket map: SIPB/hyades#2 (disk speed; AI twin djbclark/hyades#5), **#3 (TSI bugs + ask: ship the shim precompiled,
+4. Ticket map: SIPB/hyades#2 (disk speed; AI twin <USER>/hyades#5), **#3 (TSI bugs + ask: ship the shim precompiled,
    opt-in, in the ci-images; @xy: only after a human review of the code, or passt for CI instead; twin #6)**, #4 (step cwd; twin #7);
    libkrun #818 (port 0), #819 (blocked recv), #860 (always `SO_REUSEPORT`), #924 (virtiofs speed; slp replied 2026-10-14, see item 1.4a), #926 (`shutdown`/`getpeername`
-   hang), #929 (stale listener). **#3 is answered: do not re-ask, and do not ask djbclark to review the C** (comment 69,
+   hang), #929 (stale listener). **#3 is answered: do not re-ask, and do not ask the operator to review the C** (comment 69,
    2026-10-14: he does not understand it; SIPB may close the ticket). If they later enable passt for CI, re-run the suite
    without the shim before removing it. Replies are not watched: check with `gh issue view N -R libkrun/libkrun --comments` and
    `forgejo-api GET /repos/SIPB/hyades/issues/N/comments`.
@@ -193,7 +193,7 @@ one:** the client reaches its daemon over loopback, and even `--no-daemon` forks
 3. **Our image** (run 241): setup step 0.2 s instead of about 100 s (JDK + SDK install 69 s, gcc, shim compile); compile 4 m 25 s
    unchanged (virtiofs-bound); job otherwise as before. Run 240: `actions/checkout`, toolchain and shim verified.
 4. **SIPB/hyades#3 is answered (2026-10-14).** @xy: passt for the CI runner only (not Hyades) until upstream TSI fixes; the shim
-   goes into ci-images only after a human has reviewed and understood the code. djbclark will not be that reviewer. Plektra
+   goes into ci-images only after a human has reviewed and understood the code. the operator will not be that reviewer. Plektra
    keeps the opt-in preload in our own image. Still open only if SIPB picks it up: global preload (needs `SA_RESTART`/`EINTR`
    tests, per-job port ranges, Go/static-binary answer), and a no-shim re-test if CI moves to passt.
 
@@ -219,7 +219,7 @@ one:** the client reaches its daemon over loopback, and even `--no-daemon` forks
    jobs.
 
 Not in this repo (see its README, "What is not in this repository"): `local-timings.md`, the generated `forgejo-ci.yml`, the general
-`forgejo` skill and pre-2026-10-14 history, all in djbclark-ade.
+`forgejo` skill and pre-2026-10-14 history, all in local-ade.
 
 Reference files, all in `docs/`: `shim-by-default.md` (how to get the shim into jobs, six ways,
 risks), `tickets/` (ticket texts, including the filed #3 as `sipb-hyades-shim-request-draft.md`), `comparison.md`,

@@ -16,7 +16,7 @@ Status (2026-10-21): tools installed, script written and smoke-tested against a 
   --group-by host,tags so parent-snapshot matching and retention still work. /workspace files that match credential patterns are NOT excluded
   here (they were excluded from the old plain archive only because it was unencrypted).
 
-## Remaining step (Daniel)
+## Remaining step (operator)
 1. On the Mac: `brew install rclone` then `rclone authorize "drive"`, sign in as the Google account, and copy the
    JSON token it prints ({"access_token":...,"refresh_token":...}).
 2. Paste it through a secret request (box env secret, e.g. RCLONE_GDRIVE_TOKEN). Never paste it in chat.

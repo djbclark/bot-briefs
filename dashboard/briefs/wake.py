@@ -163,7 +163,7 @@ def wake_bot(conn: sqlite3.Connection, action_id: int) -> str:
 
     notify_cmd = get_notify_cmd()
     message = (
-        f'Daniel left a dashboard action for you: #{action_id} ({act_type}) on "{title}". '
+        f'The operator left a dashboard action for you: #{action_id} ({act_type}) on "{title}". '
         f"Run `brief inbox --bot {cli_name} --json`, handle it under your normal rules, "
         f'then `brief ack {action_id} --status applied|failed --note "..."`.'
     )

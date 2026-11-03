@@ -37,7 +37,7 @@ BRIEFS_DB = os.environ.get("BRIEFS_DB", str(DEFAULT_DB_PATH))
 # Server configuration
 BRIEFS_PORT = int(os.environ.get("BRIEFS_PORT", "8642"))
 BRIEFS_BASE_URL = os.environ.get("BRIEFS_BASE_URL", f"http://127.0.0.1:{BRIEFS_PORT}")
-# Tailnet URL Daniel opens (used for item links handed to bots).
+# Tailnet URL the operator opens (used for item links handed to bots).
 BRIEFS_PUBLIC_URL = os.environ.get("BRIEFS_PUBLIC_URL", "https://grok-bot-box.example-tailnet.ts.net")
 
 # Auth configuration
@@ -95,7 +95,7 @@ BOTS: list[Bot] = [
     Bot("00000000-0000-4000-8000-000000000007", "chess", "Chess", 60, "chess", "chess"),
     Bot("00000000-0000-4000-8000-000000000008", "pika", "Pika", 70, "pika", "pika"),
     Bot("00000000-0000-4000-8000-000000000009", "friends", "Friends", 80, "social", "friends"),
-    Bot("00000000-0000-4000-8000-000000000010", "te", "Techno Euphora", 90, "te", "techno-euphora"),
+    Bot("00000000-0000-4000-8000-000000000010", "project", "Project", 90, "project", "project-bot"),
     Bot("00000000-0000-4000-8000-000000000011", "oneoffs", "One-offs", 100, "misc", "one-offs"),
     Bot("00000000-0000-4000-8000-000000000012", "coding", "Coding", 110, "code", "coding"),
     Bot("00000000-0000-4000-8000-000000000013", "other", "Other", 120, "misc", "other"),
@@ -139,7 +139,7 @@ def find_bot(identifier: str) -> Bot | None:
         return BOTS_BY_NAME[val]
     if val in BOTS_BY_CLI_NAME:
         return BOTS_BY_CLI_NAME[val]
-    # Try normalized name/slug (e.g. "techno-euphora" -> "techno euphora")
+    # Try normalized name/slug (e.g. "project-bot" -> "project bot")
     normalized = val.replace("-", " ").replace("_", " ")
     for b in BOTS:
         if (

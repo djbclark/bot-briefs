@@ -9,9 +9,9 @@ description: >-
   items or pending decisions.
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/steps`](https://github.com/djbclark/djbclark-ade/tree/master/skills/steps); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/steps`](https://github.com/<USER>/local-ade/tree/master/skills/steps); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
@@ -20,9 +20,9 @@ description: >-
 
 # steps — one open item at a time, recommendation first
 
-Canonical copy: `~/src/djbclark-ade/skills/steps/` (git: `~/src/djbclark-ade`, github.com/djbclark/djbclark-ade); every TUI reaches it via a direct skill-everywhere link `~/src/djbclark-ade/skills/steps`.
+Canonical copy: `~/src/ade/skills/steps/` (git: `~/src/ade`, github.com/<USER>/local-ade); every TUI reaches it via a direct skill-everywhere link `~/src/ade/skills/steps`.
 Hermes Telegram `/steps` is native skill slash. It injects this skill; call `clarify` (section 2b) so Telegram shows one button per choice. Do not register a plugin command that returns this file — that dumps the markdown and never starts the walk.
-Claude Code: `~/src/djbclark-ade/claude/commands/steps.md` → `~/.claude/commands/steps.md` (symlink; `/steps` is also native skill slash).
+Claude Code: `~/src/ade/claude/commands/steps.md` → `~/.claude/commands/steps.md` (symlink; `/steps` is also native skill slash).
 Grok Bot: a rendered copy `ade-steps` in `/home/box/agent-data/workflows/` (skill-everywhere `grokbot`
 target, synced nightly by `/home/box/agent-data/shared/skills-sync/sync.sh`; 2026-10-23).
 
@@ -83,7 +83,7 @@ Use the native chooser your runtime actually has. Do not invent a second UX.
       HAS `AskUserQuestion` / `question` / `clarify` keeps using it (rules
       1–3 above) and never drops to this text fallback; Grok Bot keeps its
       widget (rule 5).
-5. **Grok Bot** (djbclark's cloud assistant on its own Linux box, 2026-10-23):
+5. **Grok Bot** (the operator's cloud assistant on its own Linux box, 2026-10-23):
    the question widget, `SendToUser` with type `"widget"`. It is a native
    chooser, not the rule 4 fallback: one question per widget, the widget ends
    the turn, and his pick comes back as his next message. Shape and limits in
@@ -116,7 +116,7 @@ Shared rules for every prompt, whichever tool:
    or "Skip for now" where that is a real choice. 2–4 options.
 2a. **Every option label starts with its number** — `1. Client swap only`,
    `2. Full upgrade`, … — so he can answer "do the 3rd option, then the 2nd"
-   and be understood (djbclark, 2026-10-20: "from now on, number options so it
+   and be understood (operator, 2026-10-20: "from now on, number options so it
    is easy to refer to them from here"). The number is part of the label text
    the tool shows, not something you add only in the prose; keep the numbering
    stable if you re-ask the same item, and in your reply refer back by the
@@ -129,11 +129,11 @@ Shared rules for every prompt, whichever tool:
    markdown link** (`[label](url)`), never inside the question or an option:
    Paseo's question card is neither selectable nor linkified
    ([getpaseo/paseo#3164](https://github.com/getpaseo/paseo/issues/3164);
-   djbclark, 2026-10-19). The card carries only the decision text.
+   operator, 2026-10-19). The card carries only the decision text.
 6. **Text he must read before deciding goes in the reply as wrapped markdown**
    (a PR or issue body, a draft message, a quoted document): a blockquote or
    plain prose, never `cat` output. Tool-output blocks do not word-wrap
-   (Paseo shows a horizontal scrollbar); reply markdown does (djbclark,
+   (Paseo shows a horizontal scrollbar); reply markdown does (operator,
    2026-10-20: "you should always do it that way"). Fixed-width only for
    diffs, commands and transcripts. The file stays the source of truth for
    `--body-file`. Memory: `feedback_long_text_as_wrapped_prose.md`.
@@ -231,7 +231,7 @@ The card has no header chip, no per-option description, no `helpText` and no
    pre-approved it standing, 2026-10-09; never compact earlier, it costs more
    than it saves, 2026-10-10), a Claude session in a herdr pane, an
    Orca terminal or a Paseo agent queues it itself: note the remaining queue, run
-   `~/src/djbclark-ade/bin/self-slash "/compact <focus: the open items>"`, and
+   `~/src/ade/bin/self-slash "/compact <focus: the open items>"`, and
    end the turn at once. Outside those three hosts, or if it refuses (a draft in
    his input box), ask him to type it. Grok Bot: does not apply (2d.6).
 

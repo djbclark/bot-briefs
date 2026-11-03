@@ -117,7 +117,7 @@ def test_box_is_authoritative_after_bot_takes_action(pair):
     from briefs.actions import ack, mark
     bc = mirror.open_box(pair["box"])
     mark(bc, 1, "processing")
-    submit_all(vc, [], "user@example.com")  # Daniel presses Submit all on the VPS: queued -> submitted
+    submit_all(vc, [], "user@example.com")  # User presses Submit all on the VPS: queued -> submitted
     mirror.pull_cycle(pair["box"])
     assert bc.execute("SELECT status FROM actions WHERE id=1").fetchone()[0] == "processing"  # box wins
     mirror.push_cycle(box, pair["st"])

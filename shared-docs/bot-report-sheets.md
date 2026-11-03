@@ -1,7 +1,7 @@
-# Bot report reply sheets (all of Daniel's bots)
+# Bot report reply sheets (all bots)
 
 ## Purpose
-Every daily and weekly report also gets a Google Sheet "reply sheet". Daniel writes replies in it and the bot acts on them. The chat report must include the sheet's link.
+Every daily and weekly report also gets a Google Sheet "reply sheet". The operator writes replies in it and the bot acts on them. The chat report must include the sheet's link.
 
 ## Naming
 - Daily: `<Bot name> replies YYYY-MM-DD` (example: `Radar replies 2026-10-10`)
@@ -26,7 +26,7 @@ Every daily and weekly report also gets a Google Sheet "reply sheet". Daniel wri
 | Active/Pika | <FOLDER_ID_ACTIVE_PIKA> |
 | Active/Money | <FOLDER_ID_ACTIVE_MONEY> |
 | Active/Family | <FOLDER_ID_ACTIVE_FAMILY> |
-| Active/Techno Euphora | <FOLDER_ID_ACTIVE_TECHNO_EUPHORA> |
+| Active/Project Bot | <FOLDER_ID_ACTIVE_PROJECT_BOT> |
 | History | <FOLDER_ID_HISTORY> |
 | History/Radar/2026 | <FOLDER_ID_HISTORY_RADAR_2026> |
 | History/Chief of Staff/2026 | <FOLDER_ID_HISTORY_CHIEF_OF_STAFF_2026> |
@@ -38,8 +38,8 @@ Every daily and weekly report also gets a Google Sheet "reply sheet". Daniel wri
 | History/Pika/2026 | <FOLDER_ID_HISTORY_PIKA_2026> |
 | History/Money/2026 | <FOLDER_ID_HISTORY_MONEY_2026> |
 | History/Family/2026 | <FOLDER_ID_HISTORY_FAMILY_2026> |
-| History/Techno Euphora | <FOLDER_ID_HISTORY_TECHNO_EUPHORA> |
-| History/Techno Euphora/2026 | <FOLDER_ID_HISTORY_TECHNO_EUPHORA_2026> |
+| History/Project Bot | <FOLDER_ID_HISTORY_PROJECT_BOT> |
+| History/Project Bot/2026 | <FOLDER_ID_HISTORY_PROJECT_BOT_2026> |
 
 - New year: create `History/<Bot>/<YYYY>` (user-Google-drive `create_file`, mimeType `application/vnd.google-apps.folder`, parentId = `History/<Bot>` folder), then add it to this table.
 - Ignore the ghost: there is an empty duplicate `Radar` folder under Active (`<FOLDER_ID_GHOST>`) that the APIs can't remove. Don't use it.

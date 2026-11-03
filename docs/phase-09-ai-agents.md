@@ -5,13 +5,13 @@
 ## How the CoS runs this phase
 
 1. Explain in 2-4 sentences what this phase does and why. Mark what is Grok-Bot-specific vs generic.
-2. Show the relevant repo files/examples. Anything marked `EXAMPLE FROM DANIEL, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
+2. Show the relevant repo files/examples. Anything marked `EXAMPLE TEMPLATE, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
 3. Ask before running anything that installs, overwrites, sends, spends, exposes a service, or is destructive.
 4. Do the steps. Prefer `scripts/install.sh --phase 9` (dry run) then `--apply` for file copies.
 5. Run the Verify section and report results honestly.
 6. Record progress (PROGRESS.md + memory) and wait for the user before the next phase.
 
-## Guide (from Daniel's working system)
+## Guide (from the operator's working system)
 
 ```text
 acp-run (the files listed under 'Repo files' below (`scripts/install.sh --phase N`)) is a single-file `uv run --script` program (dep: agent-client-protocol) that runs one prompt
@@ -28,7 +28,7 @@ Install what the user has; each needs the USER's own login:
   * Cline: `npm i -g --prefix ~/.local cline`, `cline auth`; set ACP_OPERATOR_APPROVED=cline in ~/.config/acp-run.env.
   * Cursor CLI: `curl https://cursor.com/install -fsS | bash`, `cursor-agent login`.  * Hermes Agent + hermes-acp.
 Edit the AGENTS / DEFAULT_SET / YOLO tables at the top of acp-run.
-Policy (Daniel's, adapt): agy by default; Claude Code --effort high for complex builds/reviews; self-contained prompt files
+Policy (example, adapt): agy by default; Claude Code --effort high for complex builds/reviews; self-contained prompt files
 (examples/handoffs/claude-vps-build.md, examples/handoffs/claude-diagnosis.md); agents report back with
 `notify-bot coding -f claude -s "done" "..."`.  Verify: `scripts/verify.sh 9`.
 ```

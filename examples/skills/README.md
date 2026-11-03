@@ -1,6 +1,6 @@
-# Skills Daniel wrote
+# Example skills
 
-Install as Grok Bot skills at `/home/box/agent-data/workflows/<name>/SKILL.md` only after review. `ade-*` are mostly generic (some assume Daniel's MIT SIPB / Forgejo / Paseo setup); the rest are personal: adapt. `bot-report-reply-sheets` is RETIRED.
+Install as Grok Bot skills at `/home/box/agent-data/workflows/<name>/SKILL.md` only after review. `ade-*` are mostly generic (some assume the operator's MIT SIPB / Forgejo / Paseo setup); the rest are personal: adapt. `bot-report-reply-sheets` is RETIRED.
 
 - [ade-dialogue](ade-dialogue/SKILL.md)
 - [ade-effort-routing](ade-effort-routing/SKILL.md)

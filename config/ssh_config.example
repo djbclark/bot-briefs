@@ -1,5 +1,5 @@
 ###############################################
-#  EXAMPLE FROM DANIEL, DO NOT USE AS-IS                                                   #
+#  EXAMPLE TEMPLATE, DO NOT USE AS-IS                                                   #
 #  CoS: show this to the user as an example, ask the interview questions for it, then      #
 #  write THEIR version with them and get their OK before saving it anywhere.               #
 ###############################################
@@ -56,7 +56,7 @@ Host <host-alias-7>
   ClearAllForwardings yes
 
 # --- NOTES ---
-# Structure: (1) internet hosts with a dedicated key (Daniel's sw-* security-watch hosts), a wildcard block sets IdentityFile;
+# Structure: (1) internet hosts with a dedicated key (the operator's sw-* security-watch hosts), a wildcard block sets IdentityFile;
 # (2) tailnet hosts (the Mac) via the userspace tailscaled SOCKS proxy: ProxyCommand ncat --proxy 127.0.0.1:1055 --proxy-type socks5 %h %p,
 # separate known_hosts; (3) a forced-command key on the Mac (change-hermes-ssh-gate) limiting what the box may run.
 # Make your own keys: ssh-keygen -t ed25519 -f ~/.ssh/<name> -N '' ; add .pub to the target's authorized_keys (optionally command="...").

@@ -14,7 +14,7 @@ HARD RULES
 ## 1. Bot names (briefs/config.py)
 Add a canonical CLI/notify name per bot and make find_bot() accept it:
 cos->chief-of-staff, radar->radar, zero->zero, family->family, money->money, business->business, chess->chess,
-pika->pika, friends->friends, te->techno-euphora, oneoffs->one-offs, coding->coding.
+pika->pika, friends->friends, project->project-bot, oneoffs->one-offs, coding->coding.
 Add field `cli_name` to Bot (keep slug unchanged; URLs stay /b/<slug>). Add helper `bot_cli_name(bot)`.
 
 ## 2. Schema (briefs/db.py) - idempotent migration in init
@@ -51,7 +51,7 @@ clear snooze_until. Add tests for that.
 `wake_bot(conn, action_id)`: if not configured -> wake_status='not_configured'. Else run
 `[NOTIFY_CMD, cli_name, "-f", "dashboard", "-m", "none", "-s", f"Dashboard action #{id}", message]` with timeout 30s,
 stdout/stderr captured and discarded; wake_status 'sent' on exit 0 else 'failed' (store `failed (exit N)`).
-message = f"Daniel left a dashboard action for you: #{id} ({type}) on \"{title[:80]}\". Run `brief inbox --bot {cli_name} --json`, handle it under your normal rules, then `brief ack {id} --status applied|failed --note \"...\"`."
+message = f"The operator left a dashboard action for you: #{id} ({type}) on \"{title[:80]}\". Run `brief inbox --bot {cli_name} --json`, handle it under your normal rules, then `brief ack {id} --status applied|failed --note \"...\"`."
 NOTIFY_CMD = env BRIEFS_NOTIFY_CMD or /home/box/.local/bin/notify-bot. Run wake in a FastAPI BackgroundTask so the
 POST returns fast; set wake_status='sending' first. Any action type may request wake (checkbox), not only reply.
 

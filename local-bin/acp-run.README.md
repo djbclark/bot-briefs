@@ -159,9 +159,9 @@ Run `acp-run --help` for every flag.
 Needs [uv](https://docs.astral.sh/uv/) and the agents' own CLIs/adapters.
 
 It is a single self-contained script (a `uv run --script` header pulls its
-dependencies). On this machine it lives in djbclark-ade at `tools/acp-run/acp-run`
+dependencies). On this machine it lives in local-ade at `tools/acp-run/acp-run`
 and is reached as `~/.local/bin/acp-run` → `~/ops/<PRIVATE_REPO>/bin/acp-run` →
-`~/ops/site-djbclark/tools/acp-run` → here. Elsewhere, copy the script onto
+`~/ops/site-config/tools/acp-run` → here. Elsewhere, copy the script onto
 your PATH:
 
 ```sh

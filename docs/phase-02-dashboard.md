@@ -5,20 +5,20 @@
 ## How the CoS runs this phase
 
 1. Explain in 2-4 sentences what this phase does and why. Mark what is Grok-Bot-specific vs generic.
-2. Show the relevant repo files/examples. Anything marked `EXAMPLE FROM DANIEL, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
+2. Show the relevant repo files/examples. Anything marked `EXAMPLE TEMPLATE, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
 3. Ask before running anything that installs, overwrites, sends, spends, exposes a service, or is destructive.
 4. Do the steps. Prefer `scripts/install.sh --phase 2` (dry run) then `--apply` for file copies.
 5. Run the Verify section and report results honestly.
 6. Record progress (PROGRESS.md + memory) and wait for the user before the next phase.
 
-## Guide (from Daniel's working system)
+## Guide (from the operator's working system)
 
 ```text
 FastAPI app (Python 3.11+), SQLite with FTS5, Jinja2 + htmx, uvicorn on 127.0.0.1:8642, code in shared/dashboard (git repo).
 Full source is in this repo under dashboard/; its README.md is the spec (data model, importer, CLI, routes, auth, M2
 actions, section 10 VPS mirror). Modules:
   briefs/config.py   paths, port, BRIEFS_PUBLIC_URL, BRIEFS_ALLOWED_LOGINS, BOTS table (agent id, slug, name, sort, area, cli name)
-                     <-- PERSONALIZE (EXAMPLE FROM DANIEL): your bots, agent ids (after phase 5), login, tailnet URL
+                     <-- PERSONALIZE (EXAMPLE TEMPLATE): your bots, agent ids (after phase 5), login, tailnet URL
   briefs/db.py schema+migrations | store.py publish/upsert, stable keys, carry-forward, stale | parse.py markdown->items
   importer.py history import (optional) | cli.py `brief` | actions.py item actions + ranking | wake.py BRIEFS_NOTIFY_CMD
   web.py routes (/, /bot/<slug>, /r/<id>, /item/<id>, /search, /history, /cleanup, /healthz, actions) + identity-header auth

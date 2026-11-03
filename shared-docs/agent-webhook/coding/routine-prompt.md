@@ -1,6 +1,6 @@
 # DRAFT: Coding bot webhook routine prompt
 
-(Modeled on Techno Euphora's webhook routine as documented in agent-webhook/README.md; its stored routine text was not found on the box.)
+(Modeled on a project bot's webhook routine as documented in agent-webhook/README.md; its stored routine text was not found on the box.)
 
 ---
 

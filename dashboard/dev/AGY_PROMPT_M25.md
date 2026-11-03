@@ -45,7 +45,7 @@ Functions in actions.py (keep existing ones working; adjust signatures as needed
 - `mark(conn, action_id, status)`: only 'processing' allowed for now (from queued/submitted/pending/seen/discuss); sets
   updated_at.
 - `ack(conn, action_id, status, note, keep_open=False)`: status in applied|failed|discuss. On `applied` for a `reply` action
-  with an item and keep_open False: set the item status to 'done' and meta_json["handled_by_action"] = action id (Daniel can
+  with an item and keep_open False: set the item status to 'done' and meta_json["handled_by_action"] = action id (the user can
   Undo via the existing reopen action). Applied icon actions don't change the item. discuss/failed don't change the item.
 - `list_actions(conn, status=None, bot=None) -> list[dict]`: JSON-ready entries (same shape as inbox entries: id, type,
   payload, status, rank, created_at, author, bot (cli name), bot_note, wake_status, item{id,item_key,title,display_id,
@@ -90,7 +90,7 @@ In progress instead). Items with a 'queued' reply show in the list with a small 
 - `GET /in-progress` partial: the In progress section. If no entries: an EMPTY placeholder
   `<div id="in-progress" hx-get="/in-progress" hx-trigger="inprogressChanged from:body" hx-swap="outerHTML"></div>` (no polling).
   If entries: same id, `hx-trigger="every 15s, inprogressChanged from:body"`, a heading "In progress (N)", and per item:
-  title (link to /i/{id}), bot name, Daniel's latest text, a status pill (submitted/processing/discuss), the bot's latest
+  title (link to /i/{id}), bot name, the user's latest text, a status pill (submitted/processing/discuss), the bot's latest
   note (for discuss, label it "Bot asks:"), a collapsed "earlier" list of previous exchanges, and the same single-line text
   box + Send button (no Queue needed here). When the set of item ids differs from the request's `ids` query param (the
   client sends the ids it currently shows via hx-vals or a hidden input), add `HX-Trigger: listChanged` so the main list
@@ -112,7 +112,7 @@ id="item-list"; it must also have `hx-get` with the current query and `hx-trigge
 place keeping filters). No Apply button. Full page loads with a query string must render with the filters applied and
 the controls preselected.
 - Bot options: "All bots" then ALL 12 bots in config order, value = cli_name: chief-of-staff, radar, zero, family, money,
-  business, chess, pika, friends, techno-euphora, one-offs, coding (label = bot name). Resolve with find_bot.
+  business, chess, pika, friends, project-bot, one-offs, coding (label = bot name). Resolve with find_bot.
 - Area options: All areas + distinct non-null items.area values in the DB (sorted). Filter by items.area.
 - Status: open (default: not done/dismissed/resolved and not currently snoozed), snoozed (snooze_until > today),
   closed (done/dismissed/resolved), all.
@@ -121,7 +121,7 @@ the controls preselected.
   bot=zero hides CoS). Today the filters appear to do nothing — find out why and fix it. Each filter must provably narrow
   the results (tests).
 
-## 5. Compact UI (templates + style.css). Daniel uses desktop Chrome in DARK MODE; also must work on a phone.
+## 5. Compact UI (templates + style.css). The operator uses desktop Chrome in DARK MODE; also must work on a phone.
 - Remove the bot tab/chip bar from base.html (`bot-chips-bar`). Header: one slim line: "Bot Briefs", Today, History,
   search box, and on the right the Submit all bar.
 - Container max-width ~1600px on desktop (width: 100%, small side padding), stays fluid on mobile.

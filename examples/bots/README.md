@@ -1,6 +1,6 @@
-# Daniel's bot fleet (examples)
+# The operator's bot fleet (examples)
 
-Each file is one bot's standing instructions. All are **EXAMPLE FROM DANIEL, DO NOT USE AS-IS**. See [docs/phase-05-bots.md](../../docs/phase-05-bots.md).
+Each file is one bot's standing instructions. All are **EXAMPLE TEMPLATE, DO NOT USE AS-IS**. See [docs/phase-05-bots.md](../../docs/phase-05-bots.md).
 
 **Placeholders.** Values in angle brackets (`<FAMILY_MEMBER_1>`, `<VIP_1>`, `<USER_EMAIL>`, `<SECOND_GMAIL>`, `<VENUE>`, `<ORG>/<PROJECT_REPO>`, `<AGENT_ID>`, `<FOLDER_ID_...>`, `<tailnet>`, ...) are placeholders the new user must fill in with their own values. Keep real people lists (family, VIPs) in private config outside any shared repo (for example a bot's own memory or `~/.config/<bot>/vips.txt`), never in example text.
 
@@ -13,7 +13,7 @@ Each file is one bot's standing instructions. All are **EXAMPLE FROM DANIEL, DO 
 - [Chess](chess.md): 
 - [Pika](pika.md): 
 - [Friends](friends.md): 
-- [Techno Euphora](techno-euphora.md): 
+- [Project Bot](project-bot.md): 
 - [One-offs](one-offs.md): 
 - [Coding](coding.md): 
 - [Other](other.md): 

@@ -317,7 +317,7 @@ def _agy_server():
 # name: (command, auth method id or None). DEFAULT_SET holds ACP session config
 # options always applied for an agent (before --set): its ACP mode can ignore
 # the TUI's own settings. Verified 2026-10-03 unless noted;
-# see site-djbclark/research/acp-trial/ and memory/reference_acp_support_*.md.
+# see site-config/research/acp-trial/ and memory/reference_acp_support_*.md.
 AGENTS = {
     # npm -g @agentclientprotocol/claude-agent-acp
     "claude": (["claude-agent-acp"], None),
@@ -382,7 +382,7 @@ elif os.access(_AGY_WRAPPER, os.X_OK):
     AGENTS["agy"] = ([_AGY_WRAPPER], None)
 DEFAULT_SET = {
     # cline's ACP mode defaults to provider "cline" (paid Cline account) even
-    # though the TUI is set up for ClinePass; djbclark uses cline-pass.
+    # though the TUI is set up for ClinePass; the operator uses cline-pass.
     "cline": {"provider": "cline-pass"},
 }
 # Per-host defaults without an edit: ACP_RUN_DEFAULT_SET_<AGENT>="id=value,..."
@@ -394,7 +394,7 @@ for _k, _v in os.environ.items():
         DEFAULT_SET.setdefault(_agent, {}).update(
             kv.strip().split("=", 1) for kv in _v.split(",") if "=" in kv
         )
-# djbclark 2026-10-03: "yolo or equivalent should be default for all agents,
+# operator 2026-10-03: "yolo or equivalent should be default for all agents,
 # and all agents called from other agents". Applied unless the caller asks for
 # a read-only run with --perm deny (that needs the agent to send permission
 # requests), and always overridable with --mode/--set. Values are the agent's
@@ -527,7 +527,7 @@ EXIT_TRIPWIRE = 77  # EX_NOPERM: a tool ran without a permission request under -
 TRIP_GRACE_S = 2.0
 # ACP tool kinds a caller may exempt from the tripwire with --tripwire-exempt-kinds
 # (read-only kinds only; never execute, edit, delete, move, fetch or other). Used by
-# failover for agy alone (djbclark, 2026-10-12): agy's default mode runs reads such as
+# failover for agy alone (operator, 2026-10-12): agy's default mode runs reads such as
 # view_file (kind "read") without asking; its shell commands are kind "execute".
 TRIPWIRE_EXEMPTABLE = ("read", "search")
 # --perm read-only (2026-10-19): the agent may use tools of these ACP kinds without asking; any

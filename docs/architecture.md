@@ -4,7 +4,7 @@
 
 ## One paragraph
 
-A fleet of single-purpose Grok Bot bots ("desks": in Daniel's case Radar = work, Zero = inbox zero, Family, Money, Business, Chess club, Pika co-op, Friends, Techno Euphora side project, One-offs, Coding, Other = catch-all TODOs) each run a daily routine at ~3:14 AM, write a markdown report and publish it with the `brief` CLI into a local SQLite DB served by a small FastAPI + htmx app (the "Bot Briefs dashboard") on 127.0.0.1:8642. The box joins the user's tailnet with tailscaled in userspace mode and exposes the app ONLY to the tailnet with `tailscale serve` (identity headers gate it to the owner's login). At ~6:16 AM the Chief of Staff runs `cos-gather` (stdlib script reading every bot's latest report + Saner/Shortwave TODOs), ranks the pool, posts ONE high-priority list in chat and publishes it to the dashboard. The user acts with dashboard buttons (done / dismiss / snooze / priority / reply, Send / Submit all). Submitted actions wake the CoS through a webhook routine (`notify-bot chief-of-staff`), which routes them; every bot also reads its `brief inbox` at the start of each run and `brief ack`s. Every post ends with a unique `Ref: BOT-xx` line from a shared base-36 counter. monit keeps services alive (no systemd/cron on the box), restic + rclone back up to Google Drive nightly, an optional VPS mirrors the dashboard, and heavy coding goes to other agents (agy, Claude Code, Cline, Cursor, Hermes) via `acp-run`.
+A fleet of single-purpose Grok Bot bots ("desks": for example Radar = work, Zero = inbox zero, Family, Money, Business, Chess club, Pika co-op, Friends, Project bot side project, One-offs, Coding, Other = catch-all TODOs) each run a daily routine at ~3:14 AM, write a markdown report and publish it with the `brief` CLI into a local SQLite DB served by a small FastAPI + htmx app (the "Bot Briefs dashboard") on 127.0.0.1:8642. The box joins the user's tailnet with tailscaled in userspace mode and exposes the app ONLY to the tailnet with `tailscale serve` (identity headers gate it to the owner's login). At ~6:16 AM the Chief of Staff runs `cos-gather` (stdlib script reading every bot's latest report + Saner/Shortwave TODOs), ranks the pool, posts ONE high-priority list in chat and publishes it to the dashboard. The user acts with dashboard buttons (done / dismiss / snooze / priority / reply, Send / Submit all). Submitted actions wake the CoS through a webhook routine (`notify-bot chief-of-staff`), which routes them; every bot also reads its `brief inbox` at the start of each run and `brief ack`s. Every post ends with a unique `Ref: BOT-xx` line from a shared base-36 counter. monit keeps services alive (no systemd/cron on the box), restic + rclone back up to Google Drive nightly, an optional VPS mirrors the dashboard, and heavy coding goes to other agents (agy, Claude Code, Cline, Cursor, Hermes) via `acp-run`.
 
 ## Diagram
 
@@ -14,7 +14,7 @@ A fleet of single-purpose Grok Bot bots ("desks": in Daniel's case Radar = work,
                  |                                         |
                  v                                         v
   +-------------------- specialist bots (one chat + memory + routines each) -----------+
-  | radar  zero  family  money  business  chess  pika  friends  techno-euphora  ...    |
+  | radar  zero  family  money  business  chess  pika  friends  project-bot  ...    |
   |   03:14 routine: brief inbox/ack -> gather -> report.md + items.json -> publish   |
   +---------------------------------------|-------------------------------------------+
                                           v   /home/box/bin/brief (writes SQLite directly)
@@ -28,7 +28,7 @@ A fleet of single-purpose Grok Bot bots ("desks": in Daniel's case Radar = work,
   optional: VPS mirror (briefs/mirror.py <-> /sync/*), acp-run -> Claude Code / agy / Cline / Cursor / Hermes
 ```
 
-## Daily rhythm (Daniel's, America/New_York; EXAMPLE, ask the user for theirs)
+## Daily rhythm (example, America/New_York; ask the user for theirs)
 
 | time | what |
 |---|---|

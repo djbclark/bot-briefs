@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# No-model watcher: when the user drops a new file in /var/tmp/eve-guest-drop/, POST once to Eve's webhook so she wakes.
-# Secrets come from ~/.config/eve-drop-watch/env (0600). Never logs them. Notified names kept in state dir.
-DROP=/var/tmp/eve-guest-drop; ST=/home/box/.local/state/eve-drop-watch; mkdir -p "$ST"
+# No-model watcher: when the user drops a new file in /var/tmp/guest-drop/, POST once to the guest bot's webhook so it wakes.
+# Secrets come from ~/.config/drop-watch/env (0600). Never logs them. Notified names kept in state dir.
+DROP=/var/tmp/guest-drop; ST=/home/box/.local/state/drop-watch; mkdir -p "$ST"
 exec 9>"$ST/lock"; flock -n 9 || exit 0
-. /home/box/.config/eve-drop-watch/env
+. /home/box/.config/drop-watch/env
 while true; do
   for f in "$DROP"/*; do
     [ -f "$f" ] || continue
@@ -11,10 +11,10 @@ while true; do
     [ -s "$f" ] || continue
     key="$n.$(stat -c %Y "$f")"
     grep -qxF "$key" "$ST/notified" 2>/dev/null && continue
-    body="New drop file from the user: $DROP/$n (read it, reply as to-guest-eve-<n>.md, then move it to .seen/). Sent by the no-model drop watcher."
+    body="New drop file from the user: $DROP/$n (read it, reply as to-guest-<n>.md, then move it to .seen/). Sent by the no-model drop watcher."
     payload=$(python3 -c 'import json,sys;print(json.dumps({"from":"guest-drop-watch","id":sys.argv[1],"reply_to":"","body":sys.argv[2]}))' "drop-$key" "$body")
     # token + URL via curl --config on stdin, never argv
-    code=$(printf 'url = "%s"\nheader = "Authorization: Bearer %s"\n' "$EVE_WEBHOOK_URL" "$EVE_WEBHOOK_AUTH" |
+    code=$(printf 'url = "%s"\nheader = "Authorization: Bearer %s"\n' "$GUEST_WEBHOOK_URL" "$GUEST_WEBHOOK_AUTH" |
       curl -s -K - -o /dev/null -w '%{http_code}' -m 20 -X POST -H 'Content-Type: application/json' -d "$payload")
     echo "$(date -Is) $n http=$code" >> "$ST/log"
     case "$code" in 2*) echo "$key" >> "$ST/notified";; esac

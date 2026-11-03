@@ -19,7 +19,7 @@ OPENCLI_TIMEOUT = 60
 # requested name -> dashboard slug
 TARGET_BOTS = {"radar": "radar", "zero": "zero", "family": "family", "money": "money",
                "business": "business", "chess": "chess", "pika": "pika", "friends": "friends",
-               "techno-euphora": "te", "one-offs": "oneoffs", "coding": "coding", "other": "other"}
+               "project-bot": "project", "one-offs": "oneoffs", "coding": "coding", "other": "other"}
 CLOSED = ("done", "dismissed", "resolved")
 
 WEIGHTS = {

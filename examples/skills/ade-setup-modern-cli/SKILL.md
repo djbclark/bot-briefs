@@ -11,9 +11,9 @@ description: >-
   CLI tools", "faster grep/find", or a "find | grep" pipeline replacement.
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/setup-modern-cli`](https://github.com/djbclark/djbclark-ade/tree/master/skills/setup-modern-cli); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/setup-modern-cli`](https://github.com/<USER>/local-ade/tree/master/skills/setup-modern-cli); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
@@ -26,9 +26,9 @@ The standing instruction to prefer the modern tools, plus the traps. The full
 classic→modern tables live in the reference files below; this file is the part
 to read first.
 
-Canonical source: `skills/setup-modern-cli/SKILL.md` in `~/src/djbclark-ade`.
+Canonical source: `skills/setup-modern-cli/SKILL.md` in `~/src/ade`.
 Every other TUI reaches it through the skill-everywhere symlink chain, so there
-is nothing to keep in sync. `djbclark-ade/docs/apply-toolchain-prompt.md` §1.2
+is nothing to keep in sync. `local-ade/docs/apply-toolchain-prompt.md` §1.2
 is the full, versioned installer for a new machine or repo.
 
 ## Search policy: `rg` by default, `ig` as an opt-in first line
@@ -134,7 +134,7 @@ through `uv tool install`, repo JS through `bun`/`bunx`.
 The `HOMEBREW_NO_AUTO_UPDATE=1` there is a **performance knob, not an update
 switch**: it skips the `brew update` that brew otherwise runs first (minutes, and
 it can fail on a flaky connection) and does not stop anything updating — brew
-updates still work, `site-djbclark/shell/bashrc` exports it machine-wide, and the
+updates still work, `site-config/shell/bashrc` exports it machine-wide, and the
 scheduled `brew-fast-upgrade` job owns updating.
 
 ## Footguns
@@ -158,7 +158,7 @@ scheduled `brew-fast-upgrade` job owns updating.
 5. **`sd` is retired for edits** (2026-10-09): without `-A` it matches line by
    line and exits 0 when nothing matched. Use `srgn` with `--fail-none`.
 6. **Prefer the host's own tools** when they exist (Claude Code Read/Grep/Glob/
-   Edit; this list is for *shell* work). The two rules from site-djbclark
+   Edit; this list is for *shell* work). The two rules from site-config
    `docs/tooling-policy.md` still apply.
 7. **BSD vs GNU flags are the trap, not age.** `sort -h`, `sed -i`, `date -d`,
    `readlink -f`, `grep -P`, `xargs -r` and `stat -c` differ or do not exist in
@@ -180,7 +180,7 @@ scheduled `brew-fast-upgrade` job owns updating.
 2. For "which files contain X under glob Y", use the one-command `rg -g`/`rg -t`
    form — never a `find … | xargs grep …` pipeline.
 3. For a repo with no toolchain yet, point at
-   `djbclark-ade/docs/apply-toolchain-prompt.md` (full, versioned installer).
+   `local-ade/docs/apply-toolchain-prompt.md` (full, versioned installer).
 4. Report which tool ran when a search is slow, so a missing install is visible
    (`command -v rg fd ast-grep mlr duckdb`).
 

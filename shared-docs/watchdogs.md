@@ -6,7 +6,7 @@ It checks each service every 30 s for liveness and, where possible, real health.
 
 Why monit: it is maintained, packaged, runs unprivileged, and does health checks (HTTP, TCP, or a custom program),
 not just "is the PID alive". supervisord, runit, and s6 only restart processes that exit. They would not have caught the
-8:30 AM wedge. One conf.d of drop-ins is the same idea as the Mac's watchdogd (`~/.config/djbclark/watchdogd.d/*.toml`).
+8:30 AM wedge. One conf.d of drop-ins is the same idea as the Mac's watchdogd (`~/.config/watchdogd/watchdogd.d/*.toml`).
 Backoff follows load-watch's job guard idea: cap restarts instead of looping on crashes.
 
 ## Layout
@@ -74,14 +74,14 @@ check process NAME matching "unique cmdline regex"
 
 ## Hermes quota watchdog (added 2026-10-24)
 After Hermes ran out of model quota at about 03:18 ET (cline2 DeepSeek Flash daily cap, then the xAI grok credits).
-- `~/.local/bin/change-hermes` → `/workspace/djbclark-ade/bin/change-hermes` (repo djbclark/djbclark-ade, master). Off macOS it runs itself on the Mac
+- `~/.local/bin/change-hermes` → `/workspace/ade/bin/change-hermes` (repo <USER>/ade, master). Off macOS it runs itself on the Mac
   over `ssh <mac-hermes-ssh-alias>` (`~/.ssh/config`, key `~/.ssh/<your_hermes_key_name>`, via tailscale SOCKS). On the Mac the key's authorized_keys line forces
   `bin/change-hermes-ssh-gate`, which allows only `--check`, `--list`, `--auto [--dry-run]`.
 - `--auto` order: cline2 DeepSeek Flash → cline Flash → cline2 Pro → cline Pro → cline2 kimi-k3 → glm-5.2 → minimax-m3 → qwen3.7-max → xai-oauth grok-4.7 (aiuse headroom ≥ 15%).
   It applies the first route that answers (effort medium, native context) to every side-model slot. It does not touch `model.*`. Running Hermes sessions keep the old config until they restart.
 - Concurrency (2026-10-24): every run executes on the Mac, so change-hermes locks there: `~/.hermes/state/change-hermes.lock` (mkdir lock, owner.json with pid/host/time; stale when the pid is dead or older than 20 min). `--auto` and config writes hold it; a run that waits 30 s without getting it exits 73 (busy), which wd-hermes and the Mac's watchdogd treat as a skip. Config is written to a temp file and renamed.
 - Shared cooldown: a successful `--auto` (from the box or the Mac) stamps `~/.hermes/state/change-hermes-auto.json` on the Mac; another `--auto` within 30 min only re-checks (rc 0 / 10) instead of switching.
-- The Mac runs the same watch itself: watchdogd entry `hermes-quota` (`~/.config/djbclark/watchdogd.d/hermes-quota.toml`, rendered from site-djbclark `roles/watchdogd`), every 15 min, `--auto` on rc 10. The lock and cooldown keep the two from stepping on each other.
+- The Mac runs the same watch itself: watchdogd entry `hermes-quota` (`~/.config/watchdogd/watchdogd.d/hermes-quota.toml`, rendered from site-config `roles/watchdogd`), every 15 min, `--auto` on rc 10. The lock and cooldown keep the two from stepping on each other.
 - `hermes-ping` is not used for the check: it sends a Telegram message.
 - Test by hand: `/home/box/agent-data/shared/watchdogs/bin/wd-hermes; echo $?; tail ~/.local/state/watchdogs/watchdog.log`
 

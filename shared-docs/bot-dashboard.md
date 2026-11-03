@@ -1,6 +1,6 @@
 # Bot Briefs dashboard: bot integration
 
-Daniel reads every bot's report in one place: https://grok-bot-box.<tailnet>.ts.net/ (tailnet only).
+The operator reads every bot's report in one place: https://grok-bot-box.<tailnet>.ts.net/ (tailnet only).
 He can act on any item there (done, dismiss, snooze, priority up/down, or a free-text reply/instruction). Those
 actions wait in your dashboard inbox until you read them. Everything below runs locally on grok-bot-box with
 `/home/box/bin/brief`. It needs no credentials and sends nothing to anyone.
@@ -20,7 +20,7 @@ Code, data model and ops: /home/box/agent-data/shared/dashboard/README.md
 | Chess | `chess` |
 | Pika | `pika` |
 | Friends | `friends` |
-| Techno Euphora | `techno-euphora` |
+| Project Bot | `project-bot` |
 | One-offs | `one-offs` |
 | Coding | `coding` |
 | Other | `other` |
@@ -33,16 +33,16 @@ Code, data model and ops: /home/box/agent-data/shared/dashboard/README.md
 
 This prints a JSON list (often `[]`). Each entry has `id`, `type`, `payload`, `status`, `rank`, `created_at`,
 `history` (earlier actions and notes on the same item) and `item` (`item_key`, `title`, `links`, `display_id`, `url`).
-Reading it marks icon actions `seen` and Daniel's text actions `processing`, so he sees you have picked them up.
+Reading it marks icon actions `seen` and the operator's text actions `processing`, so they see you have picked them up.
 Act on each one under your own rules, exactly as you would a reply in your reply sheet's "Your reply" column.
-Example: draft a reply, but never send anything without Daniel's card.
+Example: draft a reply, but never send anything without the operator's card.
 - `done` or `dismiss`: stop reporting that item (match it by `item.item_key`). The dashboard has already hidden it.
 - `snooze` (`payload.until` = YYYY-MM-DD): don't report the item again until that date. On or after that date, report it as normal.
 - `priority` (`payload.delta`: -1 = more important, +1 = less): reorder or flag it in your next report.
-- `reply` (`payload.text`): an instruction or answer Daniel typed about that item. Handle it like a reply-sheet reply.
+- `reply` (`payload.text`): an instruction or answer the operator typed about that item. Handle it like a reply-sheet reply.
   Its status is `queued` (he saved it for later) or `submitted` (he pressed Send or "Submit all"). Handle both.
   If `history` holds an earlier `discuss` note from you, this reply is his answer to that question.
-- `reopen`: Daniel undid an earlier done, dismiss or snooze, so the item is live again.
+- `reopen`: the operator undid an earlier done, dismiss or snooze, so the item is live again.
 
 Then acknowledge each action with one of three statuses:
 
@@ -50,13 +50,13 @@ Then acknowledge each action with one of three statuses:
     brief ack <id> --status discuss --note "Which invoice: Oct 3 ($412) or Oct 17 ($96)?"
     brief ack <id> --status failed  --note "couldn't find the thread"
 
-- `applied`: done. For a `reply`, this also closes the item on the dashboard (Daniel can Undo). Add `--keep-open`
+- `applied`: done. For a `reply`, this also closes the item on the dashboard (the operator can Undo). Add `--keep-open`
   if the item should stay on his list (e.g. you drafted something and are waiting on his card).
-- `discuss`: you need Daniel's input. Your note is shown to him as a question in the dashboard's "In progress"
+- `discuss`: you need the operator's input. Your note is shown to him as a question in the dashboard's "In progress"
   section with a reply box; his answer arrives as a new `reply` action on the same item.
 - `failed`: you couldn't do it; say why in the note.
 
-Daniel sees the status and your note on the item, so keep notes to one short line. Several ids at once also work:
+The operator sees the status and your note on the item, so keep notes to one short line. Several ids at once also work:
 `brief ack 12 13 --status applied --note "..."`.
 If a run dies after reading the inbox but before acking, the next run can see those actions again with
 `brief inbox --bot <name> --json --include-seen` (adds `seen` and `processing` actions not yet acked).
@@ -94,7 +94,7 @@ one line (e.g. "Dashboard: brief publish failed: <error>"). Never let the dashbo
 
 ## Chief of Staff: dashboard dispatch
 
-When Daniel presses Send on one item or "Submit all (N)", the dashboard runs, in the background:
+When the operator presses Send on one item or "Submit all (N)", the dashboard runs, in the background:
 
     notify-bot chief-of-staff -f dashboard -m none -s "Dashboard submit" "<N> actions submitted"
 
@@ -105,9 +105,9 @@ on its next run as in step 1.
 
 When Chief of Staff is woken with that message:
 1. `brief actions --status submitted --json` lists every submitted action across all bots, ordered by `rank`
-   (Daniel's importance order: CoS position, then P1>P2>P3, due soonest, NEW, age). Each entry's `bot` says
+   (the operator's importance order: CoS position, then P1>P2>P3, due soonest, NEW, age). Each entry's `bot` says
    which bot owns the item.
-2. `brief mark <id> [<id> ...] processing` the ones you are taking on now, so Daniel sees them as processing.
+2. `brief mark <id> [<id> ...] processing` the ones you are taking on now, so the operator sees them as processing.
 3. Handle each in rank order: do it yourself if it's yours or simple; otherwise route it to the owning bot
    under your normal routing rules (that bot will also see it in its own `brief inbox` on its next run).
 4. Ack each one you handled (`applied`, `discuss` with a question, or `failed` with a reason).

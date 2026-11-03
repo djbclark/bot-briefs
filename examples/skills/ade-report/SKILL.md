@@ -3,19 +3,19 @@ name: report
 description: Format a long Markdown report (research paper, spec, review) so it reads well in Marked 2 — numbered superscript citations, linked evidence table, descriptive file names, short paragraphs — and verify the render. Use when delivering or reformatting any document the operator will read in Marked 2.
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/report`](https://github.com/djbclark/djbclark-ade/tree/master/skills/report); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/report`](https://github.com/<USER>/local-ade/tree/master/skills/report); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
 >
-> **Mac-side reference.** This skill drives tools that run on djbclark's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present. Marked 2 is a Mac app; the citation scripts run anywhere.
+> **Mac-side reference.** This skill drives tools that run on the operator's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present. Marked 2 is a Mac app; the citation scripts run anywhere.
 
 # report — make a long Markdown document readable in Marked 2
 
-Canonical copy: `~/src/djbclark-ade/skills/report/` (git: `~/src/djbclark-ade`);
-every TUI reaches it via a direct skill-everywhere link `~/src/djbclark-ade/skills/report`.
+Canonical copy: `~/src/ade/skills/report/` (git: `~/src/ade`);
+every TUI reaches it via a direct skill-everywhere link `~/src/ade/skills/report`.
 Born 2026-10-10 from the `hiwymi/research/ai-heaven` delivery, where the operator
 rejected three formats in a row (see "Why", below). Apply it before the first
 `open -a "Marked 2"`, not after a complaint.

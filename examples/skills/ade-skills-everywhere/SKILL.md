@@ -1,14 +1,14 @@
 ---
 name: skills-everywhere
 description: >-
-  Make a shared djbclark-ade skill available to every installed agent TUI, or
+  Make a shared local-ade skill available to every installed agent TUI, or
   check the current links. Use for /skills-everywhere and when a universal
   skill is missing from one client.
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/skills-everywhere`](https://github.com/djbclark/djbclark-ade/tree/master/skills/skills-everywhere); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/skills-everywhere`](https://github.com/<USER>/local-ade/tree/master/skills/skills-everywhere); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
@@ -16,7 +16,7 @@ description: >-
 # skills-everywhere
 
 Links a skill into every agent TUI. Content lives in exactly one place —
-`~/src/djbclark-ade/skills/<name>/` for public skills (the default),
+`~/src/ade/skills/<name>/` for public skills (the default),
 `~/ops/<PRIVATE_REPO>/skills/<name>/` for private ones (only `1password`) —
 and every TUI gets a **direct symlink** to it; no hub, no chains (collapsed
 2026-10-14). Clients covered (the `targets` table in the script): Claude
@@ -27,10 +27,10 @@ plus Grok Bot (`grokbot`, a rendered copy `ade-<name>` in
 `~/agent-data/workflows/` on its Linux box, 2026-10-23):
 
 ```sh
-~/src/djbclark-ade/bin/skill-everywhere --all
-~/src/djbclark-ade/bin/skill-everywhere --check --all
-~/src/djbclark-ade/bin/skill-everywhere <skill-name>...
-~/src/djbclark-ade/bin/skill-everywhere --check <skill-name>...
+~/src/ade/bin/skill-everywhere --all
+~/src/ade/bin/skill-everywhere --check --all
+~/src/ade/bin/skill-everywhere <skill-name>...
+~/src/ade/bin/skill-everywhere --check <skill-name>...
 ```
 
 ## Default: reconcile the whole shared catalog
@@ -66,7 +66,7 @@ handle one skill by hand, use
 an `ade-*` folder by hand; the next sync overwrites it.
 
 The requested skill must already exist under
-`~/src/djbclark-ade/skills/<skill-name>/SKILL.md` or the private tree.
+`~/src/ade/skills/<skill-name>/SKILL.md` or the private tree.
 The compatibility command `~/ops/<PRIVATE_REPO>/bin/skill-everywhere` points
 at this same canonical script.
 Run `--check` first when diagnosing a missing client, and preserve links owned
@@ -80,12 +80,12 @@ Check the current skill catalog and read the listed `SKILL.md` before declaring
 access broken. On this machine, Codex skills link through `~/.agents/skills/`
 to the canonical ADE directory. If `/name` reaches the agent as literal text,
 load that named skill and follow it; resolve a missing catalog entry at
-`~/src/djbclark-ade/skills/<name>/SKILL.md` before asking for a restart.
+`~/src/ade/skills/<name>/SKILL.md` before asking for a restart.
 Loading a named skill to diagnose access does not execute its workflow.
 
 Also check `~/.codex/AGENTS.md` (or `$CODEX_HOME/AGENTS.md` when set), following
 all symlinks. A healthy skills directory can coexist with a dangling global
 instruction link. The shared home instructions live at
-`~/ops/site-djbclark/home-agents.md`; repair a stale runtime link to that file.
+`~/ops/site-config/home-agents.md`; repair a stale runtime link to that file.
 Verify readability through the original Codex path after the repair. A running
 session can read it immediately; automatic startup loading needs a new session.

@@ -78,7 +78,7 @@ def test_bot_cli_names() -> None:
         "chess": "chess",
         "pika": "pika",
         "friends": "friends",
-        "te": "techno-euphora",
+        "project": "project-bot",
         "oneoffs": "one-offs",
         "coding": "coding",
     }
@@ -102,54 +102,54 @@ def test_actions_local_effects(temp_db: str) -> None:
     item_id = items[0]["id"]
 
     # 1. done action
-    act_done = create_action(conn, item_id, "done", {}, "daniel")
+    act_done = create_action(conn, item_id, "done", {}, "user")
     assert act_done["status"] == "pending"
     assert act_done["type"] == "done"
     it = conn.execute("SELECT status FROM items WHERE id = ?", (item_id,)).fetchone()
     assert it["status"] == "done"
 
     # 2. reopen action
-    create_action(conn, item_id, "reopen", {}, "daniel")
+    create_action(conn, item_id, "reopen", {}, "user")
     it = conn.execute("SELECT status, snooze_until FROM items WHERE id = ?", (item_id,)).fetchone()
     assert it["status"] == "open"
     assert it["snooze_until"] is None
 
     # 3. dismiss action
-    create_action(conn, item_id, "dismiss", {}, "daniel")
+    create_action(conn, item_id, "dismiss", {}, "user")
     it = conn.execute("SELECT status FROM items WHERE id = ?", (item_id,)).fetchone()
     assert it["status"] == "dismissed"
 
     # Reopen again
-    create_action(conn, item_id, "reopen", {}, "daniel")
+    create_action(conn, item_id, "reopen", {}, "user")
 
     # 4. snooze action
     with pytest.raises(ValueError, match="future"):
-        create_action(conn, item_id, "snooze", {"until": today_et()}, "daniel")
-    act_snooze = create_action(conn, item_id, "snooze", {"until": "2099-12-31"}, "daniel")
+        create_action(conn, item_id, "snooze", {"until": today_et()}, "user")
+    act_snooze = create_action(conn, item_id, "snooze", {"until": "2099-12-31"}, "user")
     it = conn.execute("SELECT snooze_until FROM items WHERE id = ?", (item_id,)).fetchone()
     assert it["snooze_until"] == "2099-12-31"
 
     # Reopen clears snooze
-    create_action(conn, item_id, "reopen", {}, "daniel")
+    create_action(conn, item_id, "reopen", {}, "user")
     it = conn.execute("SELECT snooze_until FROM items WHERE id = ?", (item_id,)).fetchone()
     assert it["snooze_until"] is None
 
     # 5. priority action
     # Default priority treats NULL as 3. delta -1 -> 2
-    create_action(conn, item_id, "priority", {"delta": -1}, "daniel")
+    create_action(conn, item_id, "priority", {"delta": -1}, "user")
     it = conn.execute("SELECT priority FROM items WHERE id = ?", (item_id,)).fetchone()
     assert it["priority"] == 2
 
     # Clamp to 1..5: decrement 3 times
-    create_action(conn, item_id, "priority", {"delta": -1}, "daniel")
-    create_action(conn, item_id, "priority", {"delta": -1}, "daniel")
+    create_action(conn, item_id, "priority", {"delta": -1}, "user")
+    create_action(conn, item_id, "priority", {"delta": -1}, "user")
     it = conn.execute("SELECT priority FROM items WHERE id = ?", (item_id,)).fetchone()
     assert it["priority"] == 1
 
     # 6. reply action
     with pytest.raises(ValueError, match="text"):
-        create_action(conn, item_id, "reply", {"text": ""}, "daniel")
-    act_reply = create_action(conn, item_id, "reply", {"text": "Please fix this", "wake": True}, "daniel")
+        create_action(conn, item_id, "reply", {"text": ""}, "user")
+    act_reply = create_action(conn, item_id, "reply", {"text": "Please fix this", "wake": True}, "user")
     assert act_reply["wake_requested"] == 1
     it = conn.execute("SELECT status FROM items WHERE id = ?", (item_id,)).fetchone()
     assert it["status"] == "open"
@@ -174,7 +174,7 @@ def test_snooze_hides_then_reappears(temp_db: str, monkeypatch) -> None:
     monkeypatch.setattr("briefs.actions.today_et", lambda: "2026-10-23")
 
     # Snooze until 2026-10-25; while today is 2026-10-23, open view excludes it
-    create_action(conn, item_id, "snooze", {"until": "2026-10-25"}, "daniel")
+    create_action(conn, item_id, "snooze", {"until": "2026-10-25"}, "user")
     open_items = items_open(conn, bot="zero")
     assert len(open_items) == 0
 
@@ -247,8 +247,8 @@ def test_inbox_and_ack(temp_db: str) -> None:
     items = items_open(conn, bot="radar")
     item_id = items[0]["id"]
 
-    act1 = create_action(conn, item_id, "reply", {"text": "Look into this"}, "daniel")
-    act2 = create_action(conn, item_id, "priority", {"delta": -1}, "daniel")
+    act1 = create_action(conn, item_id, "reply", {"text": "Look into this"}, "user")
+    act2 = create_action(conn, item_id, "priority", {"delta": -1}, "user")
 
     # Peek should return pending/queued actions without marking seen/processing
     peeked = inbox(conn, "radar", include_seen=False, mark_seen=False)
@@ -538,7 +538,7 @@ def test_cli_inbox_ack_and_publish_variations(tmp_path: Path, monkeypatch) -> No
     sheet_rows_file = tmp_path / "sheet_rows.json"
     sheet_rows_data = [
         ["ID", "Item", "Status/details", "Your reply", "Links"],  # Header row to skip
-        ["1", "Fix database connection leak", "Under review", "Reply from Daniel", '=HYPERLINK("https://github.com/org/repo/pull/123", "PR 123")'],
+        ["1", "Fix database connection leak", "Under review", "Reply from user", '=HYPERLINK("https://github.com/org/repo/pull/123", "PR 123")'],
         ["2", "Update dependencies", "Weekly bump", "", "https://github.com/org/repo/issues/456"],
     ]
     sheet_rows_file.write_text(json.dumps(sheet_rows_data), encoding="utf-8")
@@ -574,7 +574,7 @@ def test_cli_inbox_ack_and_publish_variations(tmp_path: Path, monkeypatch) -> No
     assert item_pr["links"][0]["url"] == "https://github.com/org/repo/pull/123"
 
     # Add an action for coding bot item
-    act = create_action(conn, item_pr["id"], "reply", {"text": "Ship it!"}, "daniel")
+    act = create_action(conn, item_pr["id"], "reply", {"text": "Ship it!"}, "user")
     conn.close()
 
     # 4. CLI inbox --bot coding --json

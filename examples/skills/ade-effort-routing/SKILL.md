@@ -10,14 +10,14 @@ description: >-
   subagents, or on "should we drop the thinking level for this".
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/effort-routing`](https://github.com/djbclark/djbclark-ade/tree/master/skills/effort-routing); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/effort-routing`](https://github.com/<USER>/local-ade/tree/master/skills/effort-routing); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
 >
-> **Mac-side reference.** This skill drives tools that run on djbclark's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present.
+> **Mac-side reference.** This skill drives tools that run on the operator's Mac. On this box use it to understand or explain that setup; do not run its commands here unless the tool is present.
 
 # Effort routing — your own tier, not other vendors'
 
@@ -25,8 +25,8 @@ Sibling to [model-routing](../model-routing/SKILL.md), which decides *which
 vendor* runs work. This one decides *how much thinking* the current session
 spends. They are different problems and get confused constantly.
 
-Canonical source: `skills/effort-routing/SKILL.md` in djbclark-ade
-(`~/src/djbclark-ade`; every TUI links to it directly via skill-everywhere). Snapshot
+Canonical source: `skills/effort-routing/SKILL.md` in local-ade
+(`~/src/ade`; every TUI links to it directly via skill-everywhere). Snapshot
 **2026-08-23**.
 
 ## The honest constraint
@@ -77,7 +77,7 @@ about which side you are on, stay high and say so.
   is refused while the first one's estimated quota is reserved (class
   `inflight`, 2026-10-18). Fable is **not** a separate budget: it is a sublimit (at
   most 50%) of the shared Claude weekly and bills the 5-hour window too. Fable
-  at `xhigh` needs djbclark's yes for that run (model-routing, *Routing
+  at `xhigh` needs the operator's yes for that run (model-routing, *Routing
   policy* item 1).
 - **Minimum needed spec for every sub-agent, unasked** (operator 2026-10-15):
   the goal is cost against code quality, not token count. Agent-tool

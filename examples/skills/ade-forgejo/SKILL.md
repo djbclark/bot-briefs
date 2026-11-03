@@ -8,25 +8,25 @@ description: >-
   images to SIPB Hyades (*.sipb.cloud) is the hyades-docker skill.
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/forgejo`](https://github.com/djbclark/djbclark-ade/tree/master/skills/forgejo); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/forgejo`](https://github.com/<USER>/local-ade/tree/master/skills/forgejo); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
 >
-> Source repo: forgejo.mit.edu/djbclark/sipb-agent-skills. On this box use $FORGEJO_SCRIPTS (forgejo-box) with FORGEJO_MIT_TOKEN from env; no sudo-secretspec, skip Token setup.
+> Source repo: forgejo.mit.edu/<USER>/sipb-agent-skills. On this box use $FORGEJO_SCRIPTS (forgejo-box) with FORGEJO_MIT_TOKEN from env; no sudo-secretspec, skip Token setup.
 
 # Forgejo
 
-Canonical source: `skills/forgejo/` in `~/src/sipb-agent-skills` (https://forgejo.mit.edu/djbclark/sipb-agent-skills) (written 2026-10-13).
+Canonical source: `skills/forgejo/` in `~/src/sipb-agent-skills` (https://forgejo.mit.edu/<USER>/sipb-agent-skills) (written 2026-10-13).
 Default host `forgejo.mit.edu` (Forgejo 16.0.5, Gitea-1.22-compatible API, probed
 2026-10-13). API docs for any instance: `https://HOST/api/swagger`.
 
 ## Tools (installed globally, 2026-10-13)
 
 The `scripts/` are **not on PATH**: call them by full path,
-`~/src/djbclark-ade/skills/forgejo/scripts/NAME` (2026-10-14: a bare `git-forgejo push`
+`~/src/ade/skills/forgejo/scripts/NAME` (2026-10-14: a bare `git-forgejo push`
 failed with "command not found").
 
 1. `scripts/forgejo-api` — stdlib Python, one call to `/api/v1`. Re-runs itself
@@ -45,14 +45,14 @@ failed with "command not found").
 2. `scripts/tea-forgejo` — `tea` (brew, v0.16.0) with the secret mapped onto its
    env login (`GITEA_INSTANCE_URL` + `GITEA_TOKEN`), so nothing lands in
    `~/.config/tea`. Best for `issues`, `pulls`, `releases`, `api`.
-   **The agent hosts differ (2026-10-18):** on `get` and `vps-primary` (user djbclark on both) there is no
+   **The agent hosts differ (2026-10-18):** on `get` and `vps-primary` (the same user on both) there is no
    `sudo-secretspec`, so `tea` is logged in directly: this same PAT, piped from the Mac over ssh stdin, sits in
    `~/.config/forgejo/token` (0600) and in tea's own `~/.config/tea/config.yml` (0600), `tea login default
    forgejo.mit.edu` is set, and `tea login helper` is git's HTTPS credential helper for the host. `tea login add
    --oauth` is not used there: on `get` it fails (static Go binary, port-0 listener under libkrun TSI; `forgejo-ci`
-   skill, section 3), and OAuth tokens expire. Run tea as djbclark from `cd ~`. Details: `docs/agents-vps-primary.md` in site-djbclark.
+   skill, section 3), and OAuth tokens expire. Run tea as the user from `cd ~`. Details: `docs/agents-vps-primary.md` in site-config.
 2a. `scripts/git-forgejo` — git over HTTPS with the secret:
-   `~/src/djbclark-ade/skills/forgejo/scripts/git-forgejo -C DIR push REMOTE BRANCH`, where REMOTE is whichever
+   `~/src/ade/skills/forgejo/scripts/git-forgejo -C DIR push REMOTE BRANCH`, where REMOTE is whichever
    remote points at the Forgejo host: check `git -C DIR remote -v` first (`forgejo` in some repos, `origin` in others,
    e.g. `~/src/mit`; 2026-10-17 a guessed `forgejo` failed)
    (full path every time: the bare name failed twice on 2026-10-14). The token reaches git only through a `GIT_ASKPASS`
@@ -77,14 +77,14 @@ failed with "command not found").
 
 ## Token setup
 
-Run `scripts/setup-token [HOST]`. It declares `DJBCLARK_FORGEJO_MIT_EDU_TOKEN`
+Run `scripts/setup-token [HOST]`. It declares `FORGEJO_MIT_EDU_TOKEN`
 (optional, so `check` stays green on hosts without it), opens the token page in
 the default browser, lets `sudo-secretspec set` take the pasted value, then
 verifies it with `GET /user` and prints only the login. The name is
-`DJBCLARK_<HOST upper-cased, . and - as _>_TOKEN`. `setup-token HOST PURPOSE` makes a
-second, narrower token `DJBCLARK_<HOST>_<PURPOSE>_TOKEN`: `setup-token forgejo.mit.edu
+`FORGEJO_<HOST upper-cased, . and - as _>_TOKEN`. `setup-token HOST PURPOSE` makes a
+second, narrower token `FORGEJO_<HOST>_<PURPOSE>_TOKEN`: `setup-token forgejo.mit.edu
 PACKAGE` is the `write:package`-only token for container pushes and Hyades CI
-(`hyades-docker` skill), verified with `GET /packages/djbclark`.
+(`hyades-docker` skill), verified with `GET /packages/<USER>`.
 
 The declaration is a runtime `add`. On this machine `sudo-secretspec
 template-check` says "no tracked declaration source configured" (2026-10-13), so
@@ -104,24 +104,24 @@ agents.
 
 ## forgejo.mit.edu CI
 
-**Scope (djbclark, 2026-10-18):** Hyades/Forgejo CI is for MIT/SIPB work. CI for a GitHub-sourced repo (Plektra, hermes-agent,
+**Scope (operator, 2026-10-18):** Hyades/Forgejo CI is for MIT/SIPB work. CI for a GitHub-sourced repo (Plektra, hermes-agent,
 herdr, secretspec-sqlite, sudo-secretspec, the stayturgid agent) now runs on free GitHub runners via `ci/base` + `ci/run/**` +
 a `scripts/github-*` wrapper (`forgejo-ci` skill, section 6 item 6); their private Forgejo copies are retired.
 
-Moved to the **`forgejo-ci` skill** (2026-10-14): runner facts, job-image selection (our own `ghcr.io/djbclark/ci-image-plektra`),
+Moved to the **`forgejo-ci` skill** (2026-10-14): runner facts, job-image selection (our own `ghcr.io/<USER>/ci-image-plektra`),
 the loopback `LD_PRELOAD` shim for libkrun TSI bugs (Gradle daemon, okhttp MockWebServer, WebSocket tests), probe tooling,
 ticket etiquette and the SIPB/libkrun ticket map. The evidence behind it, unchanged, is in
-`docs/runner-notes.md` in the new public repo **https://forgejo.mit.edu/djbclark/loopback-port-shim** (local `~/src/loopback-port-shim`), which
+`docs/runner-notes.md` in the new public repo **https://forgejo.mit.edu/<USER>/loopback-port-shim** (local `~/src/loopback-port-shim`), which
 is also where the shim, probes, probe workflows and `ci/tools/` scripts now live (`skills/forgejo/examples/plektra/` is only a pointer). Compare runs with
 `scripts/ci-step-times forgejo OWNER/REPO RUN` and `... github OWNER/REPO RUN`.
 
-## Filing issues on SIPB projects: fork only; you file upstream (djbclark, 2026-10-22)
+## Filing issues on SIPB projects: fork only; you file upstream (operator, 2026-10-22)
 
 SIPB prefers short, human-readable issues. **AI output never goes on `SIPB/*`**
 (no issue, comment, or PR from an agent). For every problem on a SIPB project on
 forgejo.mit.edu:
 
-1. Public fork `djbclark/<repo>` (created if missing, issues enabled): the **full
+1. Public fork `<USER>/<repo>` (created if missing, issues enabled): the **full
    AI-oriented issue** — environment, exact commands/output, commit-pinned
    file:line, hypotheses marked as such, patches, impact. Verbose is fine; only
    AIs need to read it. Title `[AI detail] <intended upstream title>`.
@@ -129,17 +129,17 @@ forgejo.mit.edu:
    (what broke, minimal repro, one or two fix ideas; aim for under ~150 words).
    Follow-ups (e.g. a reply to someone on upstream) use the same two steps on
    the fork: AI-readable write-up, then a for-humans draft as another comment.
-   **Never the clipboard** (hard to keep track of; djbclark, 2026-10-22) — that
+   **Never the clipboard** (hard to keep track of; operator, 2026-10-22) — that
    comment is what you rewrite when you post on `SIPB/*`. Agents never open,
    comment on, or PR to `SIPB/*`.
 3. After you file upstream, you (or an agent updating **only the fork**) set the
    AI issue's first line to `**Upstream issue:** URL`. Upstream can link back to
    the AI twin in a footer when you write it — agents do not post that footer.
-4. **Edit only within an hour, and only if nothing follows** (djbclark, 2026-10-17).
+4. **Edit only within an hour, and only if nothing follows** (operator, 2026-10-17).
    A body or a comment of ours may be edited only while under an hour old and no
    comment has been posted after it; otherwise a new comment. Never delete
    comments. Applies on the fork (the only tier agents write).
-5. **When done or handing off:** list the full URLs of every `djbclark/<repo>`
+5. **When done or handing off:** list the full URLs of every `<USER>/<repo>`
    issue and PR involved — that is the review surface.
 
 `scripts/forgejo-two-tier-issue --upstream SIPB/REPO --title T --human human.md
@@ -148,7 +148,7 @@ draft as its first comment. For `SIPB/*` the script forces fork-only and
 **refuses every upstream write** (the old `--upstream-go-ahead` escape hatch is
 gone). Non-SIPB upstreams may still use the legacy auto-file path. Hyades drafts:
 `skills/hyades-docker/tickets/`; CI-runner drafts: `forgejo-ci` repo
-`docs/tickets/two-tier/`. Fork: `djbclark/hyades` (2026-10-14).
+`docs/tickets/two-tier/`. Fork: `<USER>/hyades` (2026-10-14).
 
 ## Container registry and Hyades deploys
 
@@ -165,7 +165,7 @@ step, using `forgejo-api --data @-` above. Package listing stays here:
 
 ## Agent loop (local agent <-> Forgejo CI, no agent on the server)
 
-1. Branch and commit locally, `~/src/djbclark-ade/skills/forgejo/scripts/git-forgejo push forgejo BRANCH`.
+1. Branch and commit locally, `~/src/ade/skills/forgejo/scripts/git-forgejo push forgejo BRANCH`.
 2. `forgejo-api POST /repos/O/R/pulls --yes --data '{"head":"BRANCH","base":"plk/main","title":"..."}'`.
 3. Poll `GET /repos/O/R/actions/runs` for the run, then `.../runs/ID/jobs` and
    `.../actions/jobs/JOB/logs` for failures (Forgejo's shapes, not GitHub's: a run has `commit_sha`, no
@@ -193,7 +193,7 @@ step, using `forgejo-api --data @-` above. Package listing stays here:
 1. Never print the token; `get`/`export` stream values (see `sudo-secretspec`).
 2. Prefer least scope: `read:*` for browsing, add `write:*` only for the task.
 3. Mutations (create issue/PR, merge, delete) are outward-facing on a shared MIT
-   service: confirm with djbclark first unless the task already asked for them.
+   service: confirm with the operator first unless the task already asked for them.
 4. Rotate by re-running `setup-token`; `set` overwrites.
 
 ## Existing skills checked (2026-10-13)

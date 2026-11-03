@@ -1,8 +1,8 @@
 # Bot Briefs Dashboard (M0 + M1)
 
-A fast, mobile-first daily executive dashboard and cross-bot timeline aggregator for Daniel's autonomous bot swarm.
+A fast, mobile-first daily executive dashboard and cross-bot timeline aggregator for the operator's autonomous bot swarm.
 
-Bot Briefs ingests reports and transcripts across 12 personal bots (Chief of Staff, Radar, Zero, Family, Money, Business, Chess, Pika, Friends, Techno Euphora, One-offs, and Coding), tracks persistent item lifecycles across days with stable keys and carry-forward fuzzy matching, and renders a clean, server-rendered interface powered by FastAPI, Jinja2, and htmx.
+Bot Briefs ingests reports and transcripts across 12 personal bots (Chief of Staff, Radar, Zero, Family, Money, Business, Chess, Pika, Friends, Project, One-offs, and Coding), tracks persistent item lifecycles across days with stable keys and carry-forward fuzzy matching, and renders a clean, server-rendered interface powered by FastAPI, Jinja2, and htmx.
 
 ---
 
@@ -231,7 +231,7 @@ promotes every queued action to `submitted`, reranks all submitted actions (CoS 
 NEW, age; `briefs.actions.importance_key`) and fires one dispatch. No bot tab bar; filters (Bot with all 12 bots,
 Area, Status open/snoozed/closed/all, NEW only, Has due date) apply on change via hx-get into `#item-list` with the
 URL pushed. Unfiltered bot sections show 25 rows plus a "Show all N" button. **In progress** (`GET /in-progress`)
-appears only when there are queued/submitted/processing/discuss actions; it shows Daniel's text, status, the bot's
+appears only when there are queued/submitted/processing/discuss actions; it shows the user's text, status, the bot's
 latest note and a reply box, and polls every 15s only while non-empty. Items with an in-progress action are hidden
 from the main list. An `applied` reply closes its item (`meta.handled_by_action`, Undo via reopen) unless the bot
 acks with `--keep-open`. History is at `/i/{id}/actions` and on the item page.

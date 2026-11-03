@@ -6,9 +6,9 @@
 set -uo pipefail; . "/home/box/.local/share/forgejo-box/scripts/_env"
 SRC=${1:?OWNER/REPO}; NAME=${2:-${SRC#*/}}; [ "$NAME" = --yes ] && NAME=${SRC#*/}
 GO=0; for a in "$@"; do [ "$a" = --yes ] && GO=1; done
-OWNER=$(python3 "/home/box/src/djbclark-ade/skills/forgejo/scripts/forgejo-api" GET /user | jq -r .login)
+OWNER=$(python3 "/home/box/src/ade/skills/forgejo/scripts/forgejo-api" GET /user | jq -r .login)
 BODY=$(jq -n --arg u "https://github.com/$SRC.git" --arg n "$NAME" --arg o "$OWNER" --arg t "${GITHUB_MIRROR_TOKEN:-}"   '{clone_addr:$u, repo_name:$n, repo_owner:$o, service:"github", mirror:true, private:true, mirror_interval:"8h0m0s",
     issues:false, pull_requests:false, releases:false, wiki:false, labels:false, milestones:false} + (if $t=="" then {} else {auth_token:$t} end)')
 if [ $GO = 0 ]; then echo "DRY RUN: POST /repos/migrate"; echo "$BODY" | jq 'if .auth_token then .auth_token="***" else . end'; echo "re-run with --yes"; exit 0; fi
 f=$(mktemp); trap 'rm -f "$f"' EXIT; printf '%s' "$BODY" > "$f"
-python3 "/home/box/src/djbclark-ade/skills/forgejo/scripts/forgejo-api" POST /repos/migrate --data @"$f" --yes | jq '{full_name, private, mirror, html_url}'
+python3 "/home/box/src/ade/skills/forgejo/scripts/forgejo-api" POST /repos/migrate --data @"$f" --yes | jq '{full_name, private, mirror, html_url}'

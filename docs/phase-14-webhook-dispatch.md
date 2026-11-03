@@ -5,13 +5,13 @@
 ## How the CoS runs this phase
 
 1. Explain in 2-4 sentences what this phase does and why. Mark what is Grok-Bot-specific vs generic.
-2. Show the relevant repo files/examples. Anything marked `EXAMPLE FROM DANIEL, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
+2. Show the relevant repo files/examples. Anything marked `EXAMPLE TEMPLATE, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
 3. Ask before running anything that installs, overwrites, sends, spends, exposes a service, or is destructive.
 4. Do the steps. Prefer `scripts/install.sh --phase 14` (dry run) then `--apply` for file copies.
 5. Run the Verify section and report results honestly.
 6. Record progress (PROGRESS.md + memory) and wait for the user before the next phase.
 
-## Guide (from Daniel's working system)
+## Guide (from the operator's working system)
 
 ```text
 Grok-Bot-specific: a WEBHOOK routine (UpdateRoutine, webhook trigger) gives a URL + key. CoS creates "Dashboard dispatch"; the
@@ -23,7 +23,7 @@ Unconfigured: dashboard shows "Processing trigger not configured yet"; bots pick
 CoS webhook prompt (generic): "You were woken by the dashboard webhook. Run `brief actions --status submitted --json`, mark what you
 take as processing, handle in rank order under the normal rules (never send anything without my approval card), route others to the
 owning bot, ack each. Reply in chat only if something needs me."
-Agents -> bots: Coding and Techno Euphora have webhook routines (examples/routines/coding-webhook.md, agent-webhook README).
+Agents -> bots: Coding and Project Bot have webhook routines (examples/routines/coding-webhook.md, agent-webhook README).
 Verify: `notify-bot chief-of-staff -n -s test "dry run"` (sends nothing); one real test only with the user's OK.
 ```
 

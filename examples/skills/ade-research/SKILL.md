@@ -9,9 +9,9 @@ description: >-
   tutoring (use `learn`).
 ---
 
-> **Managed copy, do not edit here.** Rendered by djbclark-ade `bin/skill-everywhere` from
-> [`skills/research`](https://github.com/djbclark/djbclark-ade/tree/master/skills/research); the next sync
-> overwrites local edits. Written for the agent TUIs on djbclark's Mac: `~/src/<repo>` is
+> **Managed copy, do not edit here.** Rendered by local-ade `bin/skill-everywhere` from
+> [`skills/research`](https://github.com/<USER>/local-ade/tree/master/skills/research); the next sync
+> overwrites local edits. Written for the agent TUIs on the operator's Mac: `~/src/<repo>` is
 > `/home/box/src/<repo>` here when cloned, and Mac-only tools (launchd, herdr, Orca, Keychain,
 > `hermes-ping`) are absent. Grok Bot's own rules win: sending, posting, pushing or merging still
 > needs the operator's explicit approval.
@@ -267,10 +267,10 @@ pages. On a host with `model-routing` / `effort-routing` skills, follow them.
    cannot. The lead's own probe uses its own tools and walks the full web
    ladder before declaring a route dead: the client's MCP rungs (Firecrawl,
    `exa`, `parallel-search`, `jina`), built-in WebSearch/WebFetch, Composio,
-   then `~/src/djbclark-ade/bin/web-get search|fetch` (Crawl4AI and the
+   then `~/src/ade/bin/web-get search|fetch` (Crawl4AI and the
    archives are its last rungs; `paper-search` for papers). The ladder per
    client is `fallback-chains/references/web-access.md`.
-   Fix a harness failure at the root in `~/src/djbclark-ade` (code, not only
+   Fix a harness failure at the root in `~/src/ade` (code, not only
    docs); do not just route around it, then say what you changed.
 7. **Pause on missing sources (operator, 2026-10-11).** A page or search a
    slice needs that fails on every rung (`web-get` exit 5), or comes back

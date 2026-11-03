@@ -5,17 +5,17 @@
 ## How the CoS runs this phase
 
 1. Explain in 2-4 sentences what this phase does and why. Mark what is Grok-Bot-specific vs generic.
-2. Show the relevant repo files/examples. Anything marked `EXAMPLE FROM DANIEL, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
+2. Show the relevant repo files/examples. Anything marked `EXAMPLE TEMPLATE, DO NOT USE AS-IS`: show as an example, ask the interview questions, draft the user's own version, get an explicit OK.
 3. Ask before running anything that installs, overwrites, sends, spends, exposes a service, or is destructive.
 4. Do the steps. Prefer `scripts/install.sh --phase 7` (dry run) then `--apply` for file copies.
 5. Run the Verify section and report results honestly.
 6. Record progress (PROGRESS.md + memory) and wait for the user before the next phase.
 
-## Guide (from Daniel's working system)
+## Guide (from the operator's working system)
 
 ```text
-Show examples/routines/cos-daily-high-priority.md (Daniel's prompt, with generic examples), interview
-(questions at its end), draft, create on the CoS with UpdateRoutine (Daniel: 6:16 AM daily).
+Show examples/routines/cos-daily-high-priority.md (the operator's prompt, with generic examples), interview
+(questions at its end), draft, create on the CoS with UpdateRoutine (e.g. 6:16 AM daily).
 Pipeline: brief inbox --bot cos -> cos-gather -o /workspace/cos-gather.json --explain -> CoS ranks the whole pool -> ReadTranscript
 for bots missing from the dashboard -> /workspace/report-YYYYMMDD.md (`**Most urgent:**`, `**1. Title**`, `1.1 text`; the chat post uses `***1.***` / `> ***a.***`, see docs/chat-format.md) -> report-to-items
 -> brief publish --bot cos -> ref-append CHIEF -> chat post with link. Updates shared/source-health.json.

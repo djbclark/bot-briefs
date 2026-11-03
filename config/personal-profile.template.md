@@ -2,7 +2,7 @@
 
 - Name / what bots call me:
 - Timezone:
-- Bot brief time (Daniel: 03:14) / CoS list time (Daniel: 06:16) / weekly review day (Daniel: Friday):
+- Bot brief time (e.g. 03:14) / CoS list time (e.g. 06:16) / weekly review day (e.g. Friday):
 - Quiet hours / network maintenance window:
 - Urgent alert channel (chat only? Telegram? SMS?):
 - Bots wanted (slug, name, Ref prefix, schedule, sources, never-do rules):

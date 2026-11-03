@@ -1,7 +1,7 @@
 """Browser-level regression tests for the Today filters (real Chromium via Playwright).
 
 Regression (Oct 23 2026): a leftover Area (e.g. "family", from a filtered URL or Chrome's form-state
-restore) stayed selected when Daniel picked a Bot, so every bot except Family showed an empty list.
+restore) stayed selected when the user picked a Bot, so every bot except Family showed an empty list.
 """
 from __future__ import annotations
 
@@ -98,7 +98,7 @@ def test_filters_in_real_browser(server: str) -> None:
         bad: list[str] = []
         page.on("response", lambda r: bad.append(f"{r.status} {r.url}") if r.status >= 400 and "favicon" not in r.url else None)
 
-        # Daniel's case: page loaded with a leftover Area filter, then he picks a bot.
+        # User case: page loaded with a leftover Area filter, then he picks a bot.
         page.goto(server + "/?area=family&status=all")
         _settle(page)
         assert page.locator("#filter-area").input_value() == "family"
@@ -160,9 +160,9 @@ def test_filters_in_real_browser(server: str) -> None:
         assert _rows(page) == radar_open
 
         # A slug alias in the URL still selects the bot (Show all links used slugs).
-        page.goto(server + "/?bot=te")
+        page.goto(server + "/?bot=project")
         _settle(page)
-        assert page.locator("#filter-bot").input_value() == "techno-euphora"
+        assert page.locator("#filter-bot").input_value() == "project-bot"
 
         # An empty combination explains itself and offers Clear filters.
         page.goto(server + "/?bot=radar&area=family")
@@ -208,7 +208,7 @@ def test_row_details_accordion(server: str) -> None:
 
 
 def test_theme_toggle(server: str) -> None:
-    """Oct 26 2026: Daniel's Mac is dark by default; a top-bar control cycles Auto / Light / Dark."""
+    """Oct 26 2026: The operator's Mac is dark by default; a top-bar control cycles Auto / Light / Dark."""
     bg = "() => getComputedStyle(document.body).backgroundColor"
     with sync_api.sync_playwright() as p:
         br = p.chromium.launch(executable_path=CHROME, args=["--no-sandbox"])

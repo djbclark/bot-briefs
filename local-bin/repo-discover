@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # repo-discover: find repos that may need adding to repo-sync.
 #  1. Local: git clones on the box outside repo-sync's roots (asks), and clones inside them (auto).
-#  2. Server: GitHub/forgejo repos Daniel owns or can access that appeared since the last run.
+#  2. Server: GitHub/forgejo repos the operator owns or can access that appeared since the last run.
 # State in ~/.config/repo-sync: server-seen.txt, ignore.txt (paths or owner/name to never ask about).
 set -uo pipefail
 C="$HOME/.config/repo-sync"; mkdir -p "$C"; touch "$C/server-seen.txt" "$C/ignore.txt"
