@@ -90,7 +90,8 @@ agrees. Existing files are never overwritten unless `--force` (which saves a `.b
 | 15 | rules / conventions | [docs/phase-15-rules.md](docs/phase-15-rules.md) | no |
 | 16 | verification + troubleshooting | [docs/phase-16-troubleshooting.md](docs/phase-16-troubleshooting.md) | no |
 
-Reference docs: [docs/architecture.md](docs/architecture.md) · [docs/interview.md](docs/interview.md) ·
+Reference docs: [docs/architecture.md](docs/architecture.md) · [docs/token-saving-rules.md](docs/token-saving-rules.md) ·
+[docs/chat-format.md](docs/chat-format.md) · [shared-docs/zero-token-pollers.md](shared-docs/zero-token-pollers.md) · [docs/interview.md](docs/interview.md) ·
 [docs/grok-bot-constraints.md](docs/grok-bot-constraints.md) · [docs/executive-summary.md](docs/executive-summary.md).
 
 Suggested order for a first working day: 0, 1, 2, 3, 4, 10 (see the dashboard on the phone), 5 + 6 for 2-3 bots, 7, 14,

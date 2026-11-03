@@ -13,7 +13,7 @@ Run my daily <AREA> brief.
 2. Gather from <sources> for the last <N> days. Read-only.
 3. Keep open items; repeat ones I have not acted on; mark NEW. Rank: due today/tomorrow, deadlines in 7 days, money due, e-sign,
    someone waiting on me, failures. Max <N>; end with "N lower-priority items not shown, ask to see them".
-4. Write /workspace/<slug>-report-<YYYYMMDD>.md (`**Most urgent:** ...`, `**1. Section**`, `1.1 item`, markdown links). Build
+4. Write /workspace/<slug>-report-<YYYYMMDD>.md (`**Most urgent:** ...`, `**1. Section**`, `1.1 item`, markdown links; that is the dashboard file shape. The chat post uses `***1.*** text` with `> ***a.*** text` sub-items, see docs/chat-format.md). Build
    /workspace/<slug>-items-<YYYYMMDD>.json with stable "key"s, or `/home/box/bin/report-to-items <md> -o <json>`.
 5. `/home/box/bin/brief publish --bot <slug> --kind daily --date <YYYY-MM-DD> --title "<Area> daily <date>" --md <md> --items-json <json>`;
    check items > 0; if brief fails, continue and say so in one line.

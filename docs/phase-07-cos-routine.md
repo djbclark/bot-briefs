@@ -17,7 +17,7 @@
 Show examples/routines/cos-daily-high-priority.md (Daniel's prompt, with generic examples), interview
 (questions at its end), draft, create on the CoS with UpdateRoutine (Daniel: 6:16 AM daily).
 Pipeline: brief inbox --bot cos -> cos-gather -o /workspace/cos-gather.json --explain -> CoS ranks the whole pool -> ReadTranscript
-for bots missing from the dashboard -> /workspace/report-YYYYMMDD.md (`**Most urgent:**`, `**1. Title**`, `1.1 text`) -> report-to-items
+for bots missing from the dashboard -> /workspace/report-YYYYMMDD.md (`**Most urgent:**`, `**1. Title**`, `1.1 text`; the chat post uses `***1.***` / `> ***a.***`, see docs/chat-format.md) -> report-to-items
 -> brief publish --bot cos -> ref-append CHIEF -> chat post with link. Updates shared/source-health.json.
 Auto-review fallback (when the classifier errors, not when it blocks):
   acp-run agy -C /workspace -p 'Run this exact shell command and show its output, change nothing else: <cmd>' --model <fast model> --set thought_level=low
