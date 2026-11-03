@@ -1,6 +1,6 @@
 # Phase 16: Verification and troubleshooting
 
-[Back to README](../README.md) | Previous: [phase-15-rules.md](phase-15-rules.md) | Next: none
+[Back to README](../README.md) | Previous: [phase-15-rules.md](phase-15-rules.md) | Next: [phase-17-sync-to-public.md](phase-17-sync-to-public.md)
 
 ## How the CoS runs this phase
 

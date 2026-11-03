@@ -14,7 +14,7 @@ def test_web_auth(client: TestClient) -> None:
     assert r.status_code == 200
 
     # 3. 403 for proxied without login
-    r = client.get("/", headers={"X-Forwarded-For": "1.2.3.4"})
+    r = client.get("/", headers={"X-Forwarded-For": "198.18.0.4"})
     assert r.status_code == 403
 
     # 4. 403 for wrong login
