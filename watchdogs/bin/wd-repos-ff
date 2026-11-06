@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Zero-token keeper: ff-only several nested checkouts to origin/<default> hourly (monit).
+# Skips (non-zero) if dirty or not on the default branch; logs remote-not-found without changes.
+# Override the list with WD_REPOS_FF_PATHS (newline- or space-separated absolute paths).
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+LOG="${WD_REPOS_FF_LOG:-$HOME/.local/state/watchdogs/wd-repos-ff.log}"; mkdir -p "$(dirname "$LOG")"
+log(){ echo "$(date '+%F %T %Z') $*" >>"$LOG"; }
+if [ -n "${WD_REPOS_FF_PATHS:-}" ]; then
+  # shellcheck disable=SC2086
+  set -- $WD_REPOS_FF_PATHS
+else
+  set -- "$HOME/ops" "$HOME/ops/example-site" "$HOME/ops/example-private"
+fi
+rc=0
+for R in "$@"; do
+  [ -d "$R/.git" ] || { [ "$R" = "$HOME/ops" ] || { log "SKIP $R: not a checkout"; rc=2; }; continue; }
+  url=$(git -C "$R" remote get-url origin 2>/dev/null) || { log "SKIP $R: no origin"; rc=2; continue; }
+  def=$(git -C "$R" symbolic-ref --short -q refs/remotes/origin/HEAD); def=${def#origin/}; def=${def:-main}
+  b=$(git -C "$R" symbolic-ref --short -q HEAD) || { log "SKIP $R: detached"; rc=3; continue; }
+  [ "$b" = "$def" ] || { log "SKIP $R: on $b not $def"; rc=3; continue; }
+  [ -z "$(git -C "$R" status --porcelain)" ] || { log "SKIP $R: not clean"; rc=4; continue; }
+  old=$(git -C "$R" rev-parse HEAD)
+  if ! err=$(git -C "$R" fetch -q origin 2>&1); then
+    case "$err" in *"not found"*|*"not exist"*) log "FAIL $R: remote $url not found (renamed?): $err";; *) log "FAIL $R: fetch: $err";; esac
+    rc=5; continue; fi
+  git -C "$R" merge -q --ff-only "origin/$def" >>"$LOG" 2>&1 || { log "FAIL $R: ff-only"; rc=6; continue; }
+  new=$(git -C "$R" rev-parse HEAD); [ "$old" = "$new" ] || log "updated $R $old -> $new"
+done
+exit $rc

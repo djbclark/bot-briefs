@@ -91,8 +91,10 @@ value the agent reports differently is failure class "config", exit 1. --meta JS
 into session/new _meta. --agent-arg ARG / --agent-env K=V append to the agent's launch
 command / environment (per host: ACP_RUN_ARGS_<AGENT> split like a shell line,
 ACP_RUN_ENV_<AGENT>="K=V,K=V").
-The agent never sees HERDR_PANE_ID or HERDR_ENV (acp-run drops them on every run, not
-only --interactive: an agent hook once renamed the caller's herdr tab).
+The agent never sees HERDR_PANE_ID, HERDR_ENV, HERDR_WORKSPACE_ID, HERDR_TAB_ID, PASEO_AGENT_ID, PASEO_AGENT_CWD or
+ORCA_TERMINAL_HANDLE (acp-run drops them on every run, not only --interactive: an agent
+hook once renamed the caller's herdr tab; a slice that kept PASEO_AGENT_ID could clear or
+archive the caller's Paseo agent, 2026-10-20) and always sees ACP_RUN_AGENT=1.
 Per-host settings: ~/.config/acp-run.env (or $ACP_RUN_ENV_FILE), when present,
 holds KEY=VALUE / export KEY="VALUE" lines (no shell expansion) loaded into the
 environment unless already set, e.g. ACP_RUN_DEFAULT_SET_CLAUDE="model=sonnet,effort=high"
@@ -116,7 +118,7 @@ are the FAILURE_CLASSES, REPLY_REFUSALS, MODEL_REFUSALS and TAIL_ERROR tables in
     refused    the model declined the task (never retried; not a deliverable)
     quota      usage/rate limit or quota exhausted
     plan       model not available on the account's plan
-    auth       not logged in / authentication required
+    auth       not logged in / authentication required / zcode token_login_failed
     transient  timeout, unavailable, overloaded, connection reset, 5xx
 A reply cut off by such an error line is reported as "reply truncated; edits
 may be present". ACP errors are classified the same way.
@@ -128,7 +130,7 @@ request; quota, plan and auth failures are never retried. Default 0.
 average per CPU core is above L; with --load-wait S (env ACP_RUN_LOAD_WAIT)
 it waits up to S seconds for the load to drop first. Off by default.
 --handshake-timeout S (env ACP_RUN_HANDSHAKE_TIMEOUT) bounds initialize and
-session/new each; default 40 s, claude 90 s (HANDSHAKE_TIMEOUT).
+session/new each; default 40 s, claude 90 s, kiro 120 s (HANDSHAKE_TIMEOUT).
 --handshake-tries N (default 2) starts a fresh agent after a handshake timeout,
 or after a transient ACP error in initialize or session/new (backoff 1, 2, 4..
 10 s; nothing has run yet). The error names the step that hung.
@@ -189,7 +191,8 @@ error, truncated reply, or FAILED fake-tool-calls: a reply of tool calls printed
 text when no tool ran) or a requested model/effort/context the agent did
 not apply (FAILED config); 2 usage error (including an --effort/--context the
 agent or model cannot take); 5 empty reply and every permission
-request was denied; 75 refused by --max-load; 77 under --perm deny or read-only a tool ran
+request was denied; 75 refused by --max-load; 127 the agent binary is not on PATH (after
+waiting ACP_RUN_BIN_WAIT seconds, default 90, 0 disables, at most 600, for an upgrade to relink it); 77 under --perm deny or read-only a tool ran
 without a permission request (tripwire; turn cancelled); 124 timed out (session/cancel
 sent first, then the process is killed); 130/143 interrupted by SIGINT/SIGTERM
 (session/cancel sent, agent stopped); with --interactive also 129 on SIGHUP,
@@ -202,6 +205,7 @@ import contextlib
 import fcntl
 import json
 import logging
+import math
 import os
 import re
 import shlex
@@ -215,6 +219,7 @@ import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import unquote
 
 # zcode-acp-server sends its turn-state notification as "$/zcode/turnState". The
 # ACP Python library only knows "_" as the extension prefix and raises
@@ -330,6 +335,19 @@ AGENTS = {
     "devin": (["devin", "acp"], None),
     "cline": ([CLINE_CMD, "--acp"], None),
     "hermes": (["hermes", "acp"], None),
+    # omp (oh-my-pi) native ACP server (`omp acp`, omp 18.12.2 verified 2026-10-19). Its Claude
+    # API credits are a normal tier since 2026-10-19 (operator): no per-run approval.
+    "omp": (["omp", "acp"], None),
+    # pi-acp bridges ACP to the installed Pi's JSONL RPC (2026-11-03).
+    # It reuses Pi's own model catalog, authentication and persistent sessions.
+    "pi": (["pi-acp"], None),
+    # goose (Homebrew block-goose-cli 1.55.0, `goose acp`, 2026-10-23) through
+    # ~/.local/bin/goose-acp-wrapper: Bedrock Llama 4 Scout (us.meta.llama4-scout-17b-instruct-v1:0,
+    # us-east-1) via goose-acp-wrapper's private LiteLLM proxy (127.0.0.1:4012), whose callbacks curb
+    # Scout's tool over-use (echo-as-reply, repeated identical calls). AWS_BEARER_TOKEN_BEDROCK
+    # is injected into the proxy by sudo-secretspec. Mode comes from YOLO_SET / DENY_SET (and
+    # GOOSE_MODE: auto in ~/.config/goose/config.yaml); no GOOSE_MODE in the launch env.
+    "goose": ([os.path.expanduser("~/.local/bin/goose-acp-wrapper"), "acp"], None),
     # zcode has no ACP mode of its own; william0wang/zcode-acp (npm -g
     # zcode-acp-server) wraps `zcode app-server --stdio`. Model switches work when
     # the server gets ZCODE_BIN=<pkg>/vendor/zcode.cjs (zcode_bin(), set in run()); until
@@ -365,13 +383,20 @@ AGENTS = {
     "crush": (["env", "CRUSH_DISABLE_METRICS=1",
                "CRUSH_GLOBAL_DATA=" + CRUSH_DATA,
                "crush-acp", "acp"], "local"),
+    # kiro-cli acp (kiro-cli 2.34.0, Homebrew cask, 2026-10-25): native ACP. Its YOLO is the
+    # persistent --trust-all-tools (-a), a flag of `acp` and `chat`, not of the root command; it
+    # is in YOLO_CMD, not here. --perm deny is refused (DENY_UNSUPPORTED): Kiro runs workspace
+    # reads, grep, glob and `code` edits without a permission request, so only the tripwire
+    # would catch them, after the tool ran (adversary BLOCK H1, 2026-10-25).
+    # Never routed by route_agent.py ([discovery].never_route): dispatch it by name.
+    "kiro": (["kiro-cli", "acp"], None),
 }
 # ACP_RUN_AGY_SERVER swaps agy's server command for one run without an edit: a
 # specific agy_acp_server.par instead of the newest one, or a wrapper such as
 # refined-antigravity-acp. Unset is the default path above (compared
 # 2026-10-10, tools/acp-run/README.md "agy").
 # ACP_RUN_AGY_CMD is an alias. With neither set, ~/.local/bin/refined-antigravity-acp
-# is used when present: on hosts without a "nobody" group (the Grok Bot box)
+# is used when present: on hosts without a "nobody" group (the shared agent box)
 # the official .par crashes at startup, and the wrapper also injects
 # _meta.systemPrompt (GLOBAL_RULES). 2026-10-14.
 _AGY_WRAPPER = os.path.expanduser("~/.local/bin/refined-antigravity-acp")
@@ -382,7 +407,7 @@ elif os.access(_AGY_WRAPPER, os.X_OK):
     AGENTS["agy"] = ([_AGY_WRAPPER], None)
 DEFAULT_SET = {
     # cline's ACP mode defaults to provider "cline" (paid Cline account) even
-    # though the TUI is set up for ClinePass; the operator uses cline-pass.
+    # though the TUI is set up for ClinePass; operator uses cline-pass.
     "cline": {"provider": "cline-pass"},
 }
 # Per-host defaults without an edit: ACP_RUN_DEFAULT_SET_<AGENT>="id=value,..."
@@ -411,6 +436,7 @@ YOLO_SET = {
     "devin": {"mode": "bypass"},
     "agy": {"mode": "yolo"},
     "zcode": {"mode": "yolo"},  # zcode-acp-server 0.69: plan | build | edit | guarded | yolo
+    "goose": {"mode": "auto"},  # goose acp 1.55.0: auto | approve | smart_approve | chat
 }
 # Launch-command variants for agents whose ACP session has no auto-approve mode
 # but whose CLI takes a flag (audited 2026-10-03: cline --auto-approve true is
@@ -425,6 +451,7 @@ YOLO_CMD = {
     "crush": ["env", "CRUSH_DISABLE_METRICS=1",
               "CRUSH_GLOBAL_DATA=" + CRUSH_DATA,
               "crush-acp", "acp", "--yolo"],
+    "kiro": ["kiro-cli", "acp", "--trust-all-tools"],
 }
 # Extra environment per agent. agy's ACP server runs the user's global hooks in
 # ~/.gemini/config/hooks.json (Orca/Moshi status hooks); the Orca PreToolUse
@@ -462,10 +489,21 @@ GLOBAL_RULES = {"agy": ["~/.gemini/GEMINI.md"]}
 # session/new spends 13 s in its SDK initialize phase on an idle machine and
 # 17-24 s at load 20-70 (measured 2026-10-05), so 40 s was too close; acpx
 # allows it 60 s. Overridden by --handshake-timeout / ACP_RUN_HANDSHAKE_TIMEOUT.
-HANDSHAKE_TIMEOUT = {"claude": 90}
+# kiro: the first session/new downloads an 83 MB model (about 66 s, kirodotdev/Kiro#12118)
+HANDSHAKE_TIMEOUT = {"claude": 90, "kiro": 120}
 HANDSHAKE_TIMEOUT_DEFAULT = 40
-# Removed from the agent's environment on every run (see run()): the caller's herdr pane.
-SCRUB_ENV = ("HERDR_PANE_ID", "HERDR_ENV")
+# Removed from the agent's environment on every run (see run()): the caller's herdr pane,
+# Paseo agent and Orca terminal (2026-10-20: a dispatched slice that inherited
+# PASEO_AGENT_ID could /clear or archive the CALLER's agent through self-slash). The herdr
+# workspace and tab ids go too (2026-10-25): the Codex tool environment now passes all four
+# herdr ids (agents/codex/config.toml.tmpl), so a detached Codex would otherwise act on the caller's tab.
+SCRUB_ENV = ("HERDR_PANE_ID", "HERDR_ENV", "HERDR_WORKSPACE_ID", "HERDR_TAB_ID", "PASEO_AGENT_ID", "PASEO_AGENT_CWD", "ORCA_TERMINAL_HANDLE", "ADE_OPENCODE_SESSION_ID", "ADE_OPENCODE_DIRECTORY")
+# Set to "1" in every launched agent's environment; bin/self-slash refuses lifecycle actions
+# (/new, /clear, /reset, /compact, /quit, --finish) when it sees it.  Not "ACP_RUN": that
+# name already holds the acp-run path for skills/session-finder/launch.py.
+AGENT_MARKER_ENV = "ACP_RUN_AGENT"
+# Agents that can still write under their per-run home while being stopped (agy: a rotated
+# credential; grok: auth.json): their temp dir is removed after the agent is stopped.
 
 # Secret env filter (security review H-2, 2026-11-01). The agent's child environment
 # no longer inherits the caller's credentials: names in SECRET_ENV_EXACT or matching
@@ -474,6 +512,7 @@ SCRUB_ENV = ("HERDR_PANE_ID", "HERDR_ENV")
 # only under --perm all, e.g. GH_TOKEN so yolo coding runs can still push) or
 # --full-env (env ACP_RUN_FULL_ENV=1: inherit everything, the old behaviour).
 # Names only are logged ("env_filtered"), never values.
+# Kept in the public architecture example even if an upstream copy drops it.
 SECRET_ENV_EXACT = {
     "GH_TOKEN", "GITHUB_TOKEN", "FORGEJO_TOKEN", "TS_AUTHKEY", "RCLONE_GDRIVE_TOKEN",
     "BOX_BACKUP_PASSPHRASE", "BEEPER_ACCESS_TOKEN",
@@ -513,14 +552,65 @@ def filter_secret_env(env: dict, a) -> list:
             dropped.append(k)
     return sorted(dropped)
 
-# Agents that can still write under their per-run home while being stopped (agy: a rotated
-# credential; grok: auth.json): their temp dir is removed after the agent is stopped.
 AFTER_KILL_DROP = ("agy", "grok")
 
 # Exit codes beyond 0/1/2/124. 5 matches acpx's "every permission denied".
 EXIT_ALL_DENIED = 5
 EXIT_LOAD = 75  # EX_TEMPFAIL: try again later
 EXIT_TRIPWIRE = 77  # EX_NOPERM: a tool ran without a permission request under --perm deny
+EXIT_NOT_INSTALLED = 127  # the shell's "command not found": the agent binary is not on PATH
+# How long to keep looking for a missing agent binary (an upgrade may be relinking it:
+# 2026-10-20 03:25, `npm i -g` replaced claude-agent-acp as ime-onstart started), and how often.
+BIN_WAIT = 90.0
+BIN_WAIT_MAX = 600.0
+BIN_POLL = 2.0
+
+
+def env_seconds(name: str, default: float, low: float, high: float) -> float:
+    """A seconds value from the environment: junk, nan or inf is the default; the rest is clamped to
+    low..high (an unbounded ACP_RUN_BIN_WAIT=inf would wait forever, junk used to crash with exit 1)."""
+    try:
+        value = float(os.environ.get(name, default))
+    except ValueError:
+        return default
+    return min(max(value, low), high) if math.isfinite(value) else default
+
+
+def bin_wait_settings() -> tuple[float, float]:
+    """(wait, poll) seconds for a missing agent binary: ACP_RUN_BIN_WAIT 0..600 (0 disables),
+    ACP_RUN_BIN_POLL 0.05..30."""
+    return (env_seconds("ACP_RUN_BIN_WAIT", BIN_WAIT, 0.0, BIN_WAIT_MAX),
+            env_seconds("ACP_RUN_BIN_POLL", BIN_POLL, 0.05, 30.0))
+
+
+def agent_executable(cmd: list[str]) -> str:
+    """The program a launch command really runs: an `env NAME=VAL ... PROGRAM` wrapper (crush) is
+    skipped, since `env` is always on PATH and would hide a missing agent binary (Codex 4322594869)."""
+    if os.path.basename(cmd[0]) != "env":
+        return cmd[0]
+    for tok in cmd[1:]:
+        if "=" not in tok:
+            return tok
+    return cmd[0]
+
+
+def bin_settle(found: str, poll: float) -> None:
+    """A binary that just appeared may still be relinking (an npm package shows its bin symlink
+    before its files are all extracted): wait one more poll and, if its real path or mtime moved
+    meanwhile, keep waiting up to ten polls for it to hold still."""
+    def stamp() -> tuple[str, float] | None:
+        try:
+            real = os.path.realpath(found)
+            return real, os.stat(real).st_mtime
+        except OSError:
+            return None
+    seen = stamp()
+    for _ in range(10):
+        time.sleep(poll)
+        now = stamp()
+        if now == seen:
+            return
+        seen = now
 # A tool may report in_progress a moment before it asks: crush-acp sends in_progress,
 # then session/request_permission 1 ms later (canary, 2026-10-12). A started tool
 # trips only if its permission request has not arrived within this grace.
@@ -554,6 +644,7 @@ DENY_SET = {
     "claude": {"mode": "default"},
     "zcode": {"mode": "plan"},
     "agy": {"mode": "default"},
+    "goose": {"mode": "approve"},  # goose acp 1.55.0: "chat" still ran tools over ACP (2026-10-23); approve asks, acp-run denies
 }
 # cursor-agent acp decides permissions from ~/.cursor/cli-config.json
 # `approvalMode` ("unrestricted" here: the operator's yolo default) and the
@@ -572,19 +663,30 @@ DENY_UNSUPPORTED = {
               " with a read-only brief and a diff check (subagents run yolo unless security-sensitive,"
               " operator 2026-10-15), or set CURSOR_CONFIG_DIR to a config with approvalMode allowlist",
 }
+DENY_UNSUPPORTED["pi"] = (
+    "pi-acp runs Pi tools locally without ACP permission requests; no deny mode is verified."
+    " Use --perm all; do not use this route for security-sensitive read-only work")
 DENY_UNSUPPORTED_OVERRIDE_ENV = {"cursor": "CURSOR_CONFIG_DIR"}
+DENY_UNSUPPORTED["kiro"] = (
+    "kiro-cli acp runs read, grep, glob and workspace `code` edits without a session/request_permission"
+    " (kiro.dev/docs/reference/built-in-tools, 2026-10-25), so a deny run would only be caught by the"
+    " tripwire after the tool ran; run it under --perm all with a read-only brief and a diff check")
 DENY_ENV = {
     # opencode's PermissionConfig accepts one action for every tool (config schema,
     # https://opencode.ai/config.json, checked 2026-10-12 against v2.0.27).
     "opencode": {"OPENCODE_CONFIG_CONTENT": json.dumps({"permission": "deny"})},
-    # zcode-acp-server reads the start mode from ZCODE_ACP_MODE (no user config
-    # file overrides it here) and passes ZCODE_DISALLOWED_TOOLS to the backend's
-    # --disallowed-tools.
+    # zcode-acp-server reads the start mode from ZCODE_ACP_MODE (no user config file overrides
+    # it here). ZCODE_DISALLOWED_TOOLS and ZCODE_ACP_RUN_ALLOWLIST do NOT reach the backend
+    # through zcode-acp-server (it ignores --disallowed-tools); zcode-denylist-shim.cjs reads
+    # them and sends them as the session's toolDenylist / toolAllowlist (zcode_denylist_shim).
+    # The allowlist is a name no tool has: under deny the session is offered no tool at all,
+    # MCP tools and tools of a later zcode release included.
     "zcode": {
         "ZCODE_ACP_MODE": "plan",
         "ZCODE_DISALLOWED_TOOLS": "Bash Read Write Edit MultiEdit Glob Grep LS WebFetch"
         " WebSearch Task Agent Skill SendMessage TaskOutput TaskStop NotebookEdit TodoWrite"
-        " mcp__*",
+        " CronCreate CronList CronUpdate CronDelete mcp__*",
+        "ZCODE_ACP_RUN_ALLOWLIST": "acp-run-deny-no-tool",
     },
 }
 # --perm read-only per agent (2026-10-19): a session that can read and cannot change anything.
@@ -594,7 +696,8 @@ DENY_ENV = {
 #   codex    the "read-only" session mode (codex-acp 2.2.2 `--info`: sandbox read-only).
 #   opencode OPENCODE_CONFIG_CONTENT permission block: read/glob/grep/list/webfetch/websearch
 #            allow, everything else deny (schema https://opencode.ai/config.json).
-#   zcode    plan mode and ZCODE_DISALLOWED_TOOLS naming only the mutating tools.
+#   zcode    plan mode, plus the backend session's toolDenylist (the mutating tools) and
+#            toolAllowlist (the reading tools only), installed by zcode-denylist-shim.cjs.
 READONLY_SET = {
     "claude": {"mode": "default"},
     "codex": {"mode": "read-only"},
@@ -609,10 +712,28 @@ READONLY_ENV = {
     "zcode": {
         "ZCODE_ACP_MODE": "plan",
         "ZCODE_DISALLOWED_TOOLS": "Bash Write Edit MultiEdit Task Agent Skill SendMessage"
-        " TaskOutput TaskStop NotebookEdit TodoWrite mcp__*",
+        " TaskOutput TaskStop NotebookEdit TodoWrite CronCreate CronList CronUpdate CronDelete"
+        " mcp__*",
+        # only the reading tools: a mutating tool zcode adds later, or an MCP tool, is not offered
+        "ZCODE_ACP_RUN_ALLOWLIST": "Read Glob Grep LS WebFetch WebSearch",
     },
 }
 READONLY_AGENTS = ("claude", "codex", "opencode", "zcode")
+# Kinds that run unasked under --perm read-only because the agent's own read-only mode contains
+# them: codex's "read-only" session mode runs shell commands inside its read-only sandbox (no
+# writes, no network) without a permission request, so an unasked "execute" there is the sandbox
+# doing its job, not an escape (2026-10-19: `graft ask` tripped a research slice in 14 s, exit
+# 77). A permission request for an execute is still refused (decide()).
+READONLY_UNASKED_KINDS = {"codex": ("execute",)}
+
+
+def tripwire_exempt_kinds(agent, perm, extra=""):
+    """The ACP tool kinds that never trip this run: --tripwire-exempt-kinds (extra, comma
+    separated) plus, under --perm read-only, the reading kinds and the agent's contained kinds."""
+    kinds = frozenset(k for k in extra.split(",") if k)
+    if perm == "read-only":
+        kinds |= frozenset(READONLY_KINDS) | frozenset(READONLY_UNASKED_KINDS.get(agent, ()))
+    return kinds
 READONLY_UNSUPPORTED = ("no read-only mode verified for this agent; use --perm all with a read-only"
                         " brief and a diff check")
 
@@ -769,6 +890,37 @@ def _zcode_settings(deny, readonly=False):
     return d
 
 
+ZCODE_SHIM = Path(__file__).resolve().with_name("zcode-denylist-shim.cjs")
+
+
+def zcode_denylist_shim(deny_dir, env, perm):
+    """Make --perm read-only and --perm deny really remove the disallowed tools from zcode
+    (2026-10-24). `zcode app-server --stdio` ignores --disallowed-tools and zcode-acp-server's
+    session/create carries no toolDenylist, so ZCODE_DISALLOWED_TOOLS and the setting.json
+    permission.disallowedTools never took effect: a live read-only run was offered Bash, Edit and
+    Write and ran `ls` unasked (plan mode lets read-only shell through). zcode-denylist-shim.cjs,
+    started as ZCODE_BIN, adds the list as toolDenylist to the backend's session/create, resume
+    and send requests. It lives in <deny_dir>/shim next to a link to the real provider tables, so
+    zcode-acp-server's builtin-provider injection (and with it model switches) keeps working.
+    Raises ConfigError, never runs unguarded, if the real zcode entry or the shim is missing."""
+    real = env.get("ZCODE_BIN") or zcode_bin()
+    if not real or not Path(real).is_file():
+        raise ConfigError(f"--perm {perm} for zcode needs zcode's vendor/zcode.cjs to install its tool "
+                          "denylist, and none was found: set ZCODE_BIN to it")
+    if not ZCODE_SHIM.is_file():
+        raise ConfigError(f"--perm {perm} for zcode needs {ZCODE_SHIM}, which is missing")
+    real_dir = Path(real).resolve().parent
+    provider = next((p for p in (real_dir / "provider", real_dir.parent / "config" / "provider")
+                     if (p / "zcode-builtin.json").is_file()), None)
+    shim_dir = deny_dir / "shim"
+    shim_dir.mkdir()
+    (shim_dir / "zcode.cjs").symlink_to(ZCODE_SHIM)
+    if provider is not None:
+        (shim_dir / "provider").symlink_to(provider)
+    env["ZCODE_ACP_RUN_REAL_BIN"] = str(Path(real).resolve())
+    env["ZCODE_BIN"] = str(shim_dir / "zcode.cjs")
+
+
 # --perm deny (not --interactive) also starts opencode and agy WITHOUT the user's
 # plugins, MCP servers and hooks, as zcode (zcode_deny_settings) and claude
 # (DENY_META) already run (2026-10-13). On the 2026-10-13 SkillOpt-Sleep night all
@@ -911,7 +1063,7 @@ def _private_write(path, text):
         f.write(text)
 
 
-def opencode_deny_config(env, tag="deny"):
+def opencode_deny_config(env, tag="deny", guard=None):
     """A per-run OPENCODE_CONFIG_DIR for --perm deny: one opencode.json holding only
     OPENCODE_KEEP_KEYS from the user's global config (and OPENCODE_CONFIG, if set),
     deep-merged in that order as opencode does. opencode v2 (checked 2.0.27, from the
@@ -922,7 +1074,10 @@ def opencode_deny_config(env, tag="deny"):
     env as {env:...} references instead of the file; relative {file:x} references are
     made absolute (the copy no longer sits next to them). Raises ValueError, before
     creating anything, when a source file cannot be read or parsed: a partial copy
-    would silently lose the provider or model. Returns (temp dir, log info, extra env);
+    would silently lose the provider or model. guard, a resolved go_guard_dir(), is the one plugin
+    kept: it is linked as plugins/ade-go-context in the temp dir (OpenCode's global plugin discovery,
+    README of opencode-plugins/go-context) and nothing else is copied there, so every other user plugin
+    stays excluded. Returns (temp dir, log info, extra env);
     the caller removes the dir. env is the child's env."""
     src = Path(env.get("OPENCODE_CONFIG_DIR") or Path(
         env.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "opencode").expanduser()
@@ -975,12 +1130,16 @@ def opencode_deny_config(env, tag="deny"):
     d = Path(tempfile.mkdtemp(prefix=f"{DENY_DIR_PREFIX}opencode-{tag}-{os.getpid()}-"))
     try:
         _private_write(d / "opencode.json", json.dumps(kept, indent=1))
+        if guard is not None:
+            (d / "plugins").mkdir(mode=0o700)
+            (d / "plugins" / GO_GUARD_NAME).symlink_to(guard, target_is_directory=True)
     except BaseException:
         shutil.rmtree(d, ignore_errors=True)
         raise
     info = {"agent": "opencode", "action": "stripped", "source": str(src),
             "kept_keys": sorted(kept), "dropped_keys": sorted(dropped),
             "mcp_servers": sorted(mcp), "plugins": plugins, "project_config": "off",
+            "trusted_plugins": [GO_GUARD_NAME] if guard is not None else [],
             "secrets_via_env": len(extra_env), "secrets_in_file": on_disk,
             "env": ["OPENCODE_CONFIG_DIR", "OPENCODE_DISABLE_PROJECT_CONFIG",
                     "OPENCODE_CONFIG_PROJECT_DISABLE", "-OPENCODE_CONFIG"]
@@ -1416,7 +1575,7 @@ def strip_user_config(a, env, deny_dir):
                        "skills": "off", "hooks": "off", "permission": "user's",
                        "env": ["ZCODE_CLI_SETTINGS_FILE"]}
         if a.agent == "opencode":
-            d, info, extra = opencode_deny_config(env, tag)
+            d, info, extra = opencode_deny_config(env, tag, go_guard_dir() if is_go_model(getattr(a, "model", None)) else None)
             env.update(extra)  # literal provider secrets, referenced as {env:...} in d
             env["OPENCODE_CONFIG_DIR"] = str(d)
             # opencode reads OPENCODE_CONFIG_PROJECT_DISABLE ?? OPENCODE_DISABLE_PROJECT_CONFIG
@@ -1436,6 +1595,9 @@ def strip_user_config(a, env, deny_dir):
         else:
             d, info = agy_deny_home(tag)
     except (OSError, ValueError) as e:
+        if a.agent == "opencode" and is_go_model(getattr(a, "model", None)):
+            # a Go run must not fall back to the user's unsanitized config: its trusted guard could not be placed
+            raise ConfigError(f"could not build opencode's sanitized config with the trusted Go context guard: {e}") from None
         print(f"acp-run: could not strip {a.agent}'s plugins and MCP servers; keeping them: {e}",
               file=sys.stderr)
         kept = {"agent": a.agent, "action": "kept", "why": f"error: {e}"[:300]}
@@ -1525,6 +1687,10 @@ FAILURE_CLASSES = [
             r"invalid api[ _-]?key",
             r"unauthori[sz]ed",
             r"\b401\b",
+            # zcode (2026-10-16..18): "model_request_failed project_token_login_failed" inside an
+            # "Internal error" envelope read as transient and was retried into the auth wall; the exact
+            # code only (a prose "login failed", test_login_failed, LoginFailedError stay unmatched)
+            r"token_login_failed",  # no \b: it follows "project_" (an underscore is a word character)
         ],
     ),
     (
@@ -2062,14 +2228,22 @@ def _toks(x, split="-"):
     return re.split(split, re.sub(r"(\[[^\]]*\]|\([^)]*\))$", "", str(x or "")).lower())
 
 
+# zcode lists every GLM model twice, builtin:zai\<m> (API-key pool) and builtin:zai-coding-plan\<m>
+# (the everyday Coding Plan pool); a bare model name means the second (2026-10-24).
+ZCODE_DEFAULT_PROVIDER = "builtin:zai-coding-plan\\"
+
+
 def match_value(values, want):
     """(the value dict matching want, []) or (None, ambiguous candidates). An exact value or
     name wins. The claude ACP server's model list varies between launches ("fable" one
     time, "claude-fable-5-1[1m]" the next; 2026-10-10), so fall back to a unique token
     match: a value whose dash-separated tokens contain the wanted name's tokens as a
-    contiguous run."""
+    contiguous run. A bare zcode model name ("GLM-5.3") is the coding-plan id."""
     for v in values:
         if want in (v.get("value"), v.get("name")):
+            return v, []
+    for v in values:  # zcode: a bare "GLM-5.3" is the coding-plan pool's model, not builtin:zai\GLM-5.3
+        if str(v.get("value")).lower() == ZCODE_DEFAULT_PROVIDER + str(want).lower():
             return v, []
     for split in (r"-", r"[-:/]"):  # then also across provider prefixes: nous:anthropic/claude-x
         wt = _toks(want, split)
@@ -2170,6 +2344,91 @@ class ConfigError(Exception):
     """A requested model, effort or context was not applied (failure class config, exit 1)."""
 
 
+GO_PROVIDER_PREFIX = "opencode-go/"
+GO_POLICY_BUNDLE = Path.home() / ".local/share/acp-run/go-policy"
+_GO_POLICY = None
+_GO_ROOT = None
+GO_GUARD_NAME = "ade-go-context"  # the plugin's directory name under <config dir>/plugins/
+
+
+def is_go_model(model):
+    """True for an OpenCode Go model ID. Same boundary as go_model_policy.classification(), so a
+    standalone copy of this script can tell a non-Go run apart without loading the policy."""
+    return isinstance(model, str) and model.lower().startswith(GO_PROVIDER_PREFIX)
+
+
+def load_go_policy():
+    """Load the Go cost policy (bin/go_model_policy.py + config/go-model-policy.json), only when a Go
+    model is requested or applied; non-Go runs never need it. Looked up in exactly two places, never
+    on sys.path, in the cwd or beside the script: (1) the operator-ade checkout this script lives in
+    (tools/acp-run/acp-run -> ../../bin, ../../config), (2) the installed bundle
+    ~/.local/share/acp-run/go-policy/{bin,config}/ (README "Install"). Missing or unreadable policy
+    raises ConfigError, so a Go prompt never runs unchecked."""
+    global _GO_POLICY, _GO_ROOT
+    if _GO_POLICY is not None:
+        return _GO_POLICY
+    import importlib.util
+    here = Path(__file__).resolve()
+    roots = []
+    if here.parent.name == "acp-run" and here.parent.parent.name == "tools":
+        roots.append(here.parents[2])
+    roots.append(GO_POLICY_BUNDLE)
+    problems = []
+    for root in roots:
+        helper = root / "bin" / "go_model_policy.py"
+        if not helper.is_file():
+            problems.append(f"{helper}: not found")
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location("acp_run_go_model_policy", helper)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.policy()
+            if not (callable(getattr(mod, "classification", None)) and callable(getattr(mod, "refusal", None))):
+                raise ValueError("no classification()/refusal()")
+        except Exception as e:
+            problems.append(f"{helper}: {type(e).__name__}: {e}")
+            # A present checkout policy is authoritative. Never mask its failure
+            # with an older, potentially more permissive installed snapshot.
+            break
+        _GO_POLICY, _GO_ROOT = mod, root
+        return mod
+    raise ConfigError(
+        "the Go cost policy is not installed, so OpenCode Go models are refused (non-Go models are unaffected). "
+        f"Install the bundle (bin/go_model_policy.py, config/go-model-policy.json and opencode-plugins/go-context/ "
+        f"from operator-ade) under {GO_POLICY_BUNDLE}, or run acp-run from the checkout "
+        f"(tools/acp-run/README.md, Install). Tried: " + "; ".join(problems))
+
+
+def go_guard_dir():
+    """The trusted ade.go-context plugin directory for a sanitized OpenCode Go launch.
+
+    The guard is taken only from the root the Go policy was loaded from (the checkout or the installed
+    bundle: opencode-plugins/go-context/ beside bin/ and config/), never from the user's OpenCode config,
+    its plugins dir, the project or the cwd. The plugin resolves its policy as
+    <its real dir>/../../config/go-model-policy.json, which must be the very file the helper enforces, so
+    the guard and acp-run can never read different policies. Raises ConfigError when the guard is absent,
+    incomplete or paired with another policy file: a Go launch then fails closed instead of running
+    without its context guard."""
+    mod = load_go_policy()
+    src = _GO_ROOT / "opencode-plugins" / "go-context"
+    try:
+        real = src.resolve(strict=True)
+        missing = [n for n in ("index.js", "package.json") if not (real / n).is_file()]
+        paired = (real.parents[1] / "config" / "go-model-policy.json").resolve() == Path(mod.POLICY_PATH).resolve()
+    except (OSError, RuntimeError, IndexError) as e:
+        raise ConfigError(f"the trusted Go context guard is unavailable ({src}: {e}); Go models are refused "
+                          f"without it. Install opencode-plugins/go-context/ into {GO_POLICY_BUNDLE} "
+                          "(tools/acp-run/README.md, Install)") from None
+    if missing or not paired:
+        raise ConfigError(
+            "the trusted Go context guard is unusable, so Go models are refused: "
+            + (f"{real} lacks {', '.join(missing)}" if missing else
+               f"{real}/../../config/go-model-policy.json is not the policy acp-run enforces")
+            + f"; reinstall the bundle under {GO_POLICY_BUNDLE} (tools/acp-run/README.md, Install)")
+    return real
+
+
 def usage_exit(msg):
     """A request the agent or model cannot satisfy: say why on stderr and exit 2, before any prompt."""
     print(f"acp-run: {msg}", file=sys.stderr)
@@ -2245,7 +2504,10 @@ CONTEXT_IDS = ("context", "context_window", "context_size")
 
 def effort_options(options):
     return [o for o in opt_dicts(options)
-            if o.get("id") != "thinking" and (o.get("id") in EFFORT_IDS or o.get("category") == "thought_level")]
+            # a `thinking` switch is on/off (cline, copilot) unless it lists levels: omp's lists
+            # low..max for a Claude model (2026-10-19), and that is its effort
+            if (o.get("id") != "thinking" or len(flat_values(o)) > 3)
+            and (o.get("id") in EFFORT_IDS or o.get("category") == "thought_level")]
 
 
 def resolve_effort(options, level, who):
@@ -2378,6 +2640,39 @@ def env_pairs(text):
     return out
 
 
+# omp's own flags that choose the model (or credentials / config) a run really uses, besides `--model` (omp 18.16:
+# `--smol/--slow/--plan` roles that subagents and prewalk switch to, `--provider`, `--api-key`, `--profile`, `--config`,
+# `--models`). A pass-through --agent-arg carrying one replaces the model the guard below admitted (2026-11-03).
+OMP_MODEL_FLAGS = ("--model", "--models", "--smol", "--slow", "--plan", "--prewalk-into", "--plan-yolo-into",
+                   "--provider", "--api-key", "--profile", "--config")
+
+
+def omp_model_refusal(a):
+    """Why this omp run may spend something other than the Claude API credits omp is routed for, else None.
+
+    omp's own default is github-copilot/gpt-5.6-luna, which spends the Copilot reserve (operator 2026-10-19), so a
+    prompt run needs `--model anthropic/<claude model>`: the provider prefix is required (`github-copilot/claude-...`
+    is a Copilot model), a --resume run is judged like any other (it still launches `omp --model M acp`; a bare
+    `--resume ID` would start omp on its default), and no --agent-arg may name the model, provider, profile, role
+    models or key (they come after the --model root flag and win). `--info` spends nothing. The operator's
+    ACP_RUN_OMP_ANY_MODEL=1 lifts all of it."""
+    if a.agent != "omp" or a.info or os.environ.get("ACP_RUN_OMP_ANY_MODEL"):
+        return None
+    model = a.model or ""
+    if not (model.startswith("anthropic/") and "claude" in model[len("anthropic/"):].lower()):
+        return ("omp needs --model anthropic/<claude model> (its configured default is"
+                " github-copilot/gpt-5.6-luna, which would spend the Copilot reserve, not the"
+                " Claude API credits; a github-copilot/claude-... model is a Copilot model, and --resume needs it too);"
+                " ACP_RUN_OMP_ANY_MODEL=1 overrides")
+    for arg in getattr(a, "agent_arg", None) or []:
+        words = str(arg).split()
+        name = words[0].split("=", 1)[0] if words else ""
+        if len(name) >= 3 and name.startswith("--") and any(f.startswith(name) for f in OMP_MODEL_FLAGS):
+            return (f"omp: --agent-arg {name!r} could replace the admitted Claude API model, provider or credentials"
+                    " (use --model anthropic/<claude model>); ACP_RUN_OMP_ANY_MODEL=1 overrides")
+    return None
+
+
 def launch_tweaks(a, cmd, env):
     """The agent's launch command with the flags --effort/--context/--agent-arg need at start
     (env changed in place). cline's --thinking, copilot's --context/--model, claude's 1M switch,
@@ -2397,6 +2692,11 @@ def launch_tweaks(a, cmd, env):
             cmd += ["--model", a.model]
     if a.agent == "cline" and effort and effort != "default":
         cmd += ["--thinking", effort]
+    if a.agent == "omp" and a.model:
+        # omp's ACP session has no `model` config option; the model is the root flag
+        # (`omp --model M acp`, M like anthropic/claude-sonnet-5-5; verified 2026-10-19: it also widens the `thinking` option to
+        # low..max for a Claude model). Its configured default is github-copilot/gpt-5.6-luna.
+        cmd = cmd[:1] + ["--model", a.model] + cmd[1:]
     cmd += shlex.split(os.environ.get(f"ACP_RUN_ARGS_{a.agent.upper()}", "")) + list(getattr(a, "agent_arg", None) or [])
     env.update(env_pairs(os.environ.get(f"ACP_RUN_ENV_{a.agent.upper()}", "")))
     for kv in getattr(a, "agent_env", None) or []:
@@ -2765,6 +3065,7 @@ def fallback_cli(a, client=None) -> int:
     cmd = ["claude", "-p", "--model", model, "--session-id", sid]
     env = {k: v for k, v in os.environ.items() if k not in SCRUB_ENV}
     filter_secret_env(env, a)
+    env[AGENT_MARKER_ENV] = "1"
     if getattr(a, "effort", None) and a.effort != "default":
         cmd += ["--effort", a.effort]
     if getattr(a, "context", None) == 200000:
@@ -2787,8 +3088,9 @@ def fallback_cli(a, client=None) -> int:
                           text=True, check=False, env=env).returncode
 
 
-def extend_deadline(client, deadline):
-    """Consume a whole-second extension beside the log (2026-10-11)."""
+def extend_deadline(client, deadline, bounded=False):
+    """Consume a whole-second extension beside the log (2026-10-11). bounded (a costly Go advisory
+    turn, a.go_bounded) never moves the deadline: the file is deleted and the refusal logged."""
     name = getattr(getattr(client, "log", None), "name", None)
     if not isinstance(name, str):
         return deadline
@@ -2798,13 +3100,13 @@ def extend_deadline(client, deadline):
     try:
         with path.with_name(path.name + ".lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            return read_deadline_extension(client, deadline, path)
+            return read_deadline_extension(client, deadline, path, bounded)
     except OSError as e:
         client.rec("deadline_extension_invalid", {"error": str(e)})
         return deadline
 
 
-def read_deadline_extension(client, deadline, path):
+def read_deadline_extension(client, deadline, path, bounded=False):
     try:
         value = path.read_text().strip()
     except FileNotFoundError:
@@ -2812,7 +3114,15 @@ def read_deadline_extension(client, deadline, path):
     except (OSError, UnicodeError) as e:
         client.rec("deadline_extension_invalid", {"error": str(e)})
     else:
-        if re.fullmatch(r"[0-9]+", value):
+        if bounded:
+            # An admitted costly Go advisory run is one bounded turn (go_model_policy
+            # advisory_timeout_seconds): any extension, 0 (unlimited) included, is refused here too,
+            # so editing the control file directly cannot lift the deadline admitted at launch.
+            client.rec("deadline_extension_refused", {"value": value[:200], "deadline": deadline,
+                                                      "why": "costly Go advisory runs have a fixed deadline"})
+            print("acp-run: deadline extension refused: a costly Go advisory run keeps its fixed deadline",
+                  file=sys.stderr)
+        elif re.fullmatch(r"[0-9]+", value):
             try:
                 seconds = int(value)
                 new = None if seconds == 0 or deadline is None else deadline + seconds
@@ -2923,7 +3233,7 @@ async def prompt_turn(a, conn, sess, client, text, out, wait=None):
             why = None
             try:
                 while True:
-                    deadline = extend_deadline(client, deadline)
+                    deadline = extend_deadline(client, deadline, getattr(a, "go_bounded", False))
                     left = deadline - time.monotonic() if deadline is not None else 30
                     if left <= 0:
                         raise TimeoutError
@@ -3761,7 +4071,7 @@ async def all_models_options(conn, sess, options):
 GIT_IDENTITY_GUARD = Path.home() / ".cache/acp-run/git-identity-guard.sh"
 GIT_IDENTITY_GUARD_SH = r"""#!/bin/bash
 # acp-run's git identity guard: a reference-transaction hook acp-run injects into every agent's git
-# through GIT_CONFIG_COUNT (git_identity_guard in tools/acp-run/acp-run). Refuses a branch update to a
+# through GIT_CONFIG_PARAMETERS (git_identity_guard in tools/acp-run/acp-run). Refuses a branch update to a
 # commit made in the last 10 minutes whose committer is not the operator, outside temp dirs.
 [ "$1" = prepared ] && [ -n "${ACP_RUN_GIT_EMAIL:-}" ] && [ "${ACP_RUN_ALLOW_GIT_IDENTITY:-}" != 1 ] \
     || { cat >/dev/null; exit 0; }
@@ -3789,6 +4099,188 @@ exit 0
 """
 
 
+# Token shapes a counted GIT_CONFIG KEY may carry. Codex's shell_environment_policy drops variable
+# NAMES containing KEY, SECRET or TOKEN, which is why a whole counted group was invisible to an
+# agent's tools; the quoted transport below hands every key and value over, so a token that was
+# merely hidden becomes readable (codex security review, PR 156, 2026-10-30). These are the shapes
+# worth refusing WHEREVER they appear in a key, including a subsection git never treats as a URL
+# (`remote.<token>.url`), because the exposure is the name and not the setting's meaning. Three
+# limits keep it off ordinary configuration: no match starts mid-word (adversary round 10 measured
+# `re.IGNORECASE` and no boundary refusing `task-`, `flask-`, `disk-` and `asiapacific`, 2026-10-30),
+# each prefix is matched in the case its issuer uses, and each body has a floor just under the real
+# length, so a short ordinary name (`sk-1`, `ghp_mirror01`) travels. The `sk-` floor is 20 because
+# LiteLLM issues a WORKING key as `sk-` + 22 url-safe characters (`token_urlsafe(16)`, its default),
+# which round 11 caught travelling at a floor of 32; only a non-default shorter length escapes it.
+TOKEN_SHAPE = re.compile(
+    r"(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9]{20,}" # GitHub PAT, OAuth, user, server, refresh token
+    r"|github_pat_[A-Za-z0-9_]{20,}"                 # GitHub fine-grained PAT
+    r"|glpat-[A-Za-z0-9_-]{16,}"                     # GitLab PAT
+    r"|xox[abposr]-[A-Za-z0-9-]{12,}"                # Slack bot, user, app, refresh token
+    r"|sk-(?:ant-)?[A-Za-z0-9_-]{20,}"               # OpenAI, Anthropic and LiteLLM style key
+    r"|hf_[A-Za-z0-9]{20,}"                          # Hugging Face token
+    r"|npm_[A-Za-z0-9]{20,}"                         # npm automation token
+    r"|pypi-[A-Za-z0-9_-]{30,}"                      # PyPI upload token
+    r"|AIza[A-Za-z0-9_-]{20,}"                       # Google API key
+    r"|(?:AKIA|ASIA)[A-Z0-9]{12,}"                   # AWS access key id
+    r"|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"      # JWT
+    r")")
+
+
+def credential_in_key(key: str) -> bool:
+    """Whether a counted config key embeds a credential, by URL POSITION or by token SHAPE.
+
+    This is about KEYS only: a credential in a counted VALUE was already readable, because the name
+    filter never covered GIT_CONFIG_VALUE_<n>, so refusing those would be a different change.
+
+    POSITION: `url.*` is not the only URL-scoped family - git resolves `http.<url>.*` and
+    `credential.<url>.*` for the matching URL too (measured with `git config --get-urlmatch
+    http.sslVerify https://user:token@host/x`, which answers the setting configured under that
+    userinfo-bearing subsection and answers nothing for another host) - so every `://` in a key must
+    be followed by an authority that does not carry `@`. That covers a section's case (`URL.`,
+    `HTTP.`) and the scheme's (`HTTPS://`), because neither is matched. The authority starts after any
+    run of slashes: `https:///user:token@host` is an empty authority to the URL parser but libcurl
+    still sends that userinfo, so it is refused, while a `@` in the first path segment
+    (`url.https://example.org/@scope/.insteadOf`) stays a path and travels. A base with no `://` at
+    all (`url.git@example.org:.insteadOf`) is a path on a host named `git`, not userinfo, and
+    travels.
+
+    POSITION, query and fragment: a `?` or `#` after a `://` is refused as well, because git matches
+    those exactly and a token in them needs no `@`. Measured: with a key of
+    `http.https://example.org/repo?access_token=REDACTED.sslVerify`, `git config --get-urlmatch
+    http.sslVerify 'https://example.org/repo?access_token=REDACTED'` answers `true` while the same URL
+    without the query answers nothing, and a loopback `git ls-remote` to that URL sent the token in its
+    request target. A query is legitimate in a real remote (`https://dev.azure.com/o/p/_git/r?path=/src`,
+    a cgit web url `?h=main`), so such a key refuses too: that is the intended trade, and it stays
+    usable in `~/.gitconfig`. The one exception to "refuses" is an `includeIf.hasconfig:` glob pattern
+    with a `?` wildcard, which cannot travel through a counted config at all (fail closed, with a
+    message that names the variable only).
+
+    SHAPE: a known token shape is refused wherever it appears in the key, in a subsection
+    (`remote.<token>.url`) and in a path segment (`url.https://example.org/<token>/.insteadOf`) alike,
+    because the name filter hid the token whether or not git resolves the key. Three limits keep that
+    off ordinary configuration: a match never starts mid-word, each prefix is matched in the case its
+    issuer uses, and each body has a length floor just under the real length. Refusing a name that
+    merely resembles a prefix (`remote.sk-learn-upstream-fork.url`, `remote.ghp_mirror01.url`) would
+    break a launch for nothing, and `re.IGNORECASE` with no boundary did exactly that before
+    (adversary round 10, 2026-10-30). The floors are set from measured issuers: `ghp_` carries 36,
+    `github_pat_` 82, `glpat-` 20, `hf_` 34, `npm_` 36, and LiteLLM's default generated key is `sk-` +
+    22 (`token_urlsafe(16)`), so `sk-` sits at 20 - a smaller family (a custom LiteLLM length below
+    20) and a name glued to a token with no separator are the documented edges. A secret of a shape
+    this list does not know, sitting in a path segment, cannot be told apart from path data
+    (`@scope`), so it travels - that is this check's documented limit.
+
+    A `credential.` subsection may also be a PARTIAL url with no scheme, and `credential.` is the one
+    family where git really resolves that form: measured with `git credential fill` and a helper
+    configured under `credential.<partial>.helper`, `credential.example.org.helper` runs the helper for
+    `url=https://example.org/x`, and `credential.<userinfo>@example.org.helper` runs it for
+    `url=https://<userinfo>@example.org/x` (the ordinary case of a remote URL with an embedded token) -
+    while the same shape under `http.` never matches (`git config --get-urlmatch http.sslVerify
+    https://user:token@host/x` answers nothing for `http.user:token@host.sslVerify`). So a schemeless
+    `credential.` subsection is refused whenever its authority carries `@` at all, including the
+    username slot: a GitHub PAT is used as a username (`https://ghp_...@github.com/...`), and git
+    url-decodes `%3A`, so `credential.user%3Atoken@host.helper` matches a request whose username is
+    literally `user:token` (adversary round 9 measured that form match on git 2.56.0; the colon
+    spelling matched neither spelling there, and both are refused anyway). No colon is required,
+    because a username cannot be told apart from a token without decoding it. A port has no `@`, so
+    `credential.https://host:8443.helper` still travels, and so does a schemeless subsection without
+    userinfo (`credential.example.org.helper`).
+
+    ENCODING: both checks also run on every percent-DECODED spelling of the key, not just the text as
+    written, because the exposure is the name and not the setting's meaning: an agent reads the
+    converted key and can decode it, so `http.https://host/ghp%5F<20+>.sslVerify` spells the same
+    secret as `ghp_`. Measured with `git config --get-urlmatch http.sslVerify <url>` on 2.56.0: a
+    setting written under `http.https://host/ghp%5Fabc....sslVerify` answers for BOTH
+    `https://host/ghp_abc...` and `https://host/ghp%5Fabc...`, so git treats the two as one subsection
+    too (codex security review, PR 156, 2026-10-30). Decoding repeats until the text stops changing -
+    each step strictly shortens, so it terminates - which covers double encoding (`ghp%255F...`).
+    Escapes that are not valid escapes are left alone, so a `%` in ordinary path data travels. This
+    refuses a key that only spells a credential once decoded (`credential.user%40host.helper`,
+    `url.https%3A%2F%2Fuser%3Atoken%40host/x.insteadOf`); that is the intended trade, and both stay
+    usable in `~/.gitconfig`.
+    """
+    def refuses(spelling: str) -> bool:
+        if TOKEN_SHAPE.search(spelling):
+            return True
+        tails = []
+        rest = spelling
+        while "://" in rest:
+            _, _, rest = rest.partition("://")
+            tails.append(rest)
+            if "@" in rest.lstrip("/").split("/", 1)[0]:
+                return True
+        if any("?" in tail or "#" in tail for tail in tails):
+            return True
+        section, _, tail = spelling.partition(".")
+        if section.lower() == "credential":
+            subsection = tail.rpartition(".")[0] or tail
+            if "://" not in subsection and ("@" in subsection.split("/", 1)[0]
+                                           or "?" in subsection or "#" in subsection):
+                return True
+        return False
+
+    if refuses(key):
+        return True
+    written, decoded = key, unquote(key)
+    while decoded != written:
+        if refuses(decoded):
+            return True
+        written, decoded = decoded, unquote(decoded)
+    return False
+
+
+def git_config_parameters(env: dict, pairs: tuple[tuple[str, str], ...] = ()) -> None:
+    """Move complete counted config into Git's quoted transport, which survives KEY-name filtering.
+
+    Git reads COUNT entries before PARAMETERS. Insert new guard pairs between those layers, as
+    the old counted injection did. Validate the entire counted group before changing `env`.
+    This is Git's single-quoted format, not shell execution (shlex.quote can emit unquoted tokens).
+    A counted key that carries a credential is refused, in the caller's words and never by value:
+    the message names the index only, because the key itself is the secret.
+    """
+    raw = env.get("GIT_CONFIG_COUNT")
+    count = 0
+    # An EMPTY count means zero, exactly as git reads it (`env && *env` in config.c; measured on
+    # 2.56.0, `GIT_CONFIG_COUNT= git -c ade.x=1 config --get ade.x` prints 1 and exits 0, with no
+    # `bogus count`) and as master's `int(env.get("GIT_CONFIG_COUNT") or 0)` did, so a launcher
+    # that exports the variable empty must not turn a launch that used to work into exit 2
+    # (codex review, PR 156).
+    if raw:
+        number = raw.lstrip(" \t\n\r\v\f")
+        digits = number[1:] if number.startswith(("+", "-")) else number
+        if not digits or not digits.isascii() or not digits.isdigit():
+            raise ValueError("invalid GIT_CONFIG_COUNT: expected a nonnegative integer")
+        try:
+            count = int(raw)
+        except ValueError:
+            raise ValueError("invalid GIT_CONFIG_COUNT: expected a nonnegative integer") from None
+        if count < 0:
+            raise ValueError("invalid GIT_CONFIG_COUNT: expected a nonnegative integer")
+        if count > len(env):
+            raise ValueError("invalid GIT_CONFIG_COUNT: incomplete counted configuration")
+    counted = []
+    for i in range(count):
+        for name in (f"GIT_CONFIG_KEY_{i}", f"GIT_CONFIG_VALUE_{i}"):
+            if name not in env:
+                raise ValueError(f"missing {name}: incomplete counted configuration")
+        if not env[f"GIT_CONFIG_KEY_{i}"]:
+            raise ValueError(f"invalid GIT_CONFIG_KEY_{i}: empty config key")
+        if credential_in_key(env[f"GIT_CONFIG_KEY_{i}"]):
+            raise ValueError(
+                f"GIT_CONFIG_KEY_{i} embeds a credential, which this transport would make readable "
+                "to the agent; use a credential helper or ~/.gitconfig instead")
+        counted.append((env[f"GIT_CONFIG_KEY_{i}"], env[f"GIT_CONFIG_VALUE_{i}"]))
+    quote = lambda value: "'" + value.replace("'", "'\\''") + "'"
+    tokens = [quote(key) + "=" + quote(value) for key, value in [*counted, *pairs]]
+    if tokens:
+        env["GIT_CONFIG_PARAMETERS"] = " ".join(tokens) + (
+            " " + env["GIT_CONFIG_PARAMETERS"] if env.get("GIT_CONFIG_PARAMETERS") else "")
+    if raw is not None:
+        env.pop("GIT_CONFIG_COUNT")
+        for i in range(count):
+            env.pop(f"GIT_CONFIG_KEY_{i}")
+            env.pop(f"GIT_CONFIG_VALUE_{i}")
+
+
 def git_identity_guard(env: dict) -> None:
     """Every agent's commits stay the operator's (2026-10-18).
 
@@ -3802,26 +4294,36 @@ def git_identity_guard(env: dict) -> None:
     am and cherry-pick keep the author and make the operator the committer, so they pass. The
     identity is read before --strip-user-config can move HOME."""
     if env.get("ACP_RUN_GIT_EMAIL"):
-        return                                   # a nested acp-run: already guarded
-    try:
-        email = subprocess.run(["git", "config", "--global", "--get", "user.email"], capture_output=True,
-                               text=True, check=False, timeout=5).stdout.strip()
-        if not email:
+        # The marker alone is not proof: an intermediate launcher may drop PARAMETERS.
+        expected = {"hook.acp-run-identity.event": "reference-transaction",
+                    "hook.acp-run-identity.command": shlex.quote(str(GIT_IDENTITY_GUARD))}
+        try:
+            intact = all(subprocess.run(["git", "config", "--get", key], env=env,
+                         capture_output=True, text=True, timeout=5, check=False).stdout.strip() == value
+                         for key, value in expected.items())
+        except (OSError, subprocess.SubprocessError):
+            intact = False
+        if intact:
+            git_config_parameters(env)
             return
-        if not GIT_IDENTITY_GUARD.exists() or GIT_IDENTITY_GUARD.read_text() != GIT_IDENTITY_GUARD_SH:
+    email = env.get("ACP_RUN_GIT_EMAIL", "")
+    try:
+        if not email:
+            email = subprocess.run(["git", "config", "--global", "--get", "user.email"], capture_output=True,
+                                   text=True, check=False, timeout=5).stdout.strip()
+        if email and (not GIT_IDENTITY_GUARD.exists() or GIT_IDENTITY_GUARD.read_text() != GIT_IDENTITY_GUARD_SH):
             GIT_IDENTITY_GUARD.parent.mkdir(parents=True, exist_ok=True)
             tmp = GIT_IDENTITY_GUARD.with_name(GIT_IDENTITY_GUARD.name + f".{os.getpid()}")
             tmp.write_text(GIT_IDENTITY_GUARD_SH)
             tmp.chmod(0o755)
             os.replace(tmp, GIT_IDENTITY_GUARD)
     except (OSError, subprocess.SubprocessError):
-        return
-    n = int(env.get("GIT_CONFIG_COUNT") or 0)
-    for i, (key, value) in enumerate((("hook.acp-run-identity.event", "reference-transaction"),
-                                      ("hook.acp-run-identity.command", str(GIT_IDENTITY_GUARD))), n):
-        env[f"GIT_CONFIG_KEY_{i}"], env[f"GIT_CONFIG_VALUE_{i}"] = key, value
-    env["GIT_CONFIG_COUNT"] = str(n + 2)
-    env["ACP_RUN_GIT_EMAIL"] = email
+        email = ""
+    pairs = (("hook.acp-run-identity.event", "reference-transaction"),
+             ("hook.acp-run-identity.command", shlex.quote(str(GIT_IDENTITY_GUARD)))) if email else ()
+    git_config_parameters(env, pairs)
+    if email:
+        env["ACP_RUN_GIT_EMAIL"] = email
 
 
 async def run(a, log, err, log_path):
@@ -3836,7 +4338,11 @@ async def run(a, log, err, log_path):
     root = Path(a.dir).resolve()
     env = dict(os.environ)
     _dropped_env = filter_secret_env(env, a)
-    git_identity_guard(env)
+    try:
+        git_identity_guard(env)
+    except ValueError as e:
+        print(f"acp-run: refusing launch: {e}", file=sys.stderr)
+        return 2
     deny_dir = None
     t0, out, code = time.time(), {"agent": a.agent, "log": str(log_path)}, 1
     if _dropped_env:
@@ -3891,11 +4397,13 @@ async def run(a, log, err, log_path):
             if a.agent == "zcode":
                 deny_dir = zcode_readonly_settings()
                 env["ZCODE_CLI_SETTINGS_FILE"] = str(deny_dir / "cli" / "setting.json")
+                zcode_denylist_shim(deny_dir, env, "read-only")
         elif a.perm == "deny":
             env.update(DENY_ENV.get(a.agent, {}))
             if a.agent == "zcode":
                 deny_dir = zcode_deny_settings()
                 env["ZCODE_CLI_SETTINGS_FILE"] = str(deny_dir / "cli" / "setting.json")
+                zcode_denylist_shim(deny_dir, env, "deny")
             elif a.agent == "crush":
                 # every built-in tool off; no fallback: a crush deny run without it
                 # would run its read-only tools unasked, so it fails instead
@@ -3949,6 +4457,7 @@ async def run(a, log, err, log_path):
         # would compete for it; acp-run's own Herdr class reads its own os.environ.
         for k in SCRUB_ENV:
             env.pop(k, None)
+        env[AGENT_MARKER_ENV] = "1"
         cmd = launch_tweaks(a, cmd, env)
         for attempt in range(1, tries + 1):
             proc = await asyncio.create_subprocess_exec(
@@ -3969,9 +4478,8 @@ async def run(a, log, err, log_path):
             client = RunClient(
                 log, a.perm, root, live=a.interactive, thinking=a.show_thinking
             )
-            client.exempt_kinds = frozenset(
-                k for k in getattr(a, "tripwire_exempt_kinds", "").split(",") if k
-            ) | (frozenset(READONLY_KINDS) if a.perm == "read-only" else frozenset())
+            client.exempt_kinds = tripwire_exempt_kinds(
+                a.agent, a.perm, getattr(a, "tripwire_exempt_kinds", ""))
             client.err_path = err.name
             conn = connect_to_agent(client, proc.stdin, proc.stdout)
             phase = "initialize"  # the handshake step a failure is reported against
@@ -4081,7 +4589,7 @@ async def run(a, log, err, log_path):
                 # choices are visible (R1 6.6)
                 sets = dict(DEFAULT_SET.get(a.agent, {}))
                 sets.update(kv.split("=", 1) for kv in a.set)
-                if a.model:
+                if a.model and a.agent != "omp":
                     sets["model"] = a.model
                 options = await apply_config(a, conn, sess, init, client, order_sets(sets), applied,
                                              per_run_data=bool(deny_dir or os.environ.get("ACP_RUN_CRUSH_DATA")))
@@ -4126,7 +4634,7 @@ async def run(a, log, err, log_path):
             if a.perm == "read-only" and not a.mode:
                 sets.update(READONLY_SET.get(a.agent, {}))
             sets.update(kv.split("=", 1) for kv in a.set)
-            if a.model:
+            if a.model and a.agent != "omp":
                 sets["model"] = a.model
             sets = order_sets(sets)
             if a.resume and not sess.config_options and (sets or getattr(a, "effort", None) or getattr(a, "context", None)):
@@ -4141,6 +4649,17 @@ async def run(a, log, err, log_path):
                     usage_exit("--effort/--context: the resumed session offers no config options")
             await apply_config(a, conn, sess, init, client, sets, applied,
                                per_run_data=bool(deny_dir or os.environ.get("ACP_RUN_CRUSH_DATA")))
+            if a.agent == "opencode":
+                # Validate identity after ACP's fuzzy resolver and on resume, before
+                # the first prompt. An alias is not an exact provider/model ID.
+                resolved = applied.get("model")
+                if not resolved or resolved != a.model or "model" in applied.get("unverified", []):
+                    raise ConfigError("OpenCode requires an exact applied provider/model ID; aliases or unverified resumed models are refused")
+                if is_go_model(resolved):
+                    why = load_go_policy().refusal(resolved, advisory=getattr(a, "go_advisory", False),
+                                                   timeout=a.timeout, perm=a.perm, context=a.context)
+                    if why:
+                        raise ConfigError(why)
             if applied:
                 client.rec("applied", applied)
             if a.interactive:
@@ -4332,16 +4851,16 @@ def env_float(name):
 
 
 # Agents nothing may run without the operator's specific, explicit approval for that run
-# (operator 2026-10-15: "not use omp or omp acp without specific explicit operator approval";
-# same day: "hermes should never be used" as a delegation target, it is the operator's own
-# assistant and aiuse lists it under [disabled_services]).
+# (operator 2026-10-15: "hermes should never be used" as a delegation target, it is the operator's
+# own assistant and aiuse lists it under [disabled_services]). omp was gated the same day and left
+# this table on 2026-10-19 (operator): its Claude API credits are a normal tier, first for work
+# that needs API access and otherwise for code/bulk slices (skills/model-routing/SKILL.md).
 # The caller sets ACP_OPERATOR_APPROVED=<agent>[,<agent>] only after the operator said yes;
-# acp-dispatch applies the same gate. omp has no AGENTS entry yet, so approval alone is not enough.
+# acp-dispatch applies the same gate.
 # cline (operator 2026-10-17): the CLI and Cline.app were uninstalled; the machinery stays so it can
 # be re-enabled on purpose (reinstall, then approve). Only Hermes still uses Cline, through its own
 # ClinePass API key, never through this.
 OPERATOR_GATED = {
-    "omp": "oh-my-pi bills Claude cloud credits; aiuse marks it requires_operator_approval",
     "hermes": "the operator's own assistant, never a delegation target (operator 2026-10-15)",
     "cline": "uninstalled 2026-10-17; only Hermes uses Cline (its ClinePass API pool)",
 }
@@ -4374,23 +4893,9 @@ def main():
     ap.add_argument("-p", "--prompt")
     ap.add_argument("-f", "--prompt-file")
     ap.add_argument(
-        "--pass-env",
-        action="append",
-        metavar="NAME[,NAME]",
-        help="keep these credential-looking env vars in the agent's environment (repeatable);"
-        " by default *_TOKEN/*_KEY/*_SECRET/*PASSPHRASE*/AGENT_WEBHOOK_* etc. are removed,"
-        " except the agents' own logins (CLAUDE_CODE_OAUTH_TOKEN, CLINEPASS_*, ...)",
-    )
-    ap.add_argument(
-        "--full-env",
-        action="store_true",
-        help="pass the caller's whole environment, secrets included (old behaviour;"
-        " env ACP_RUN_FULL_ENV=1)",
-    )
-    ap.add_argument(
         "--perm",
-        default=os.environ.get("ACP_RUN_DEFAULT_PERM") or "all",
-        help="all (default, yolo; host default via ACP_RUN_DEFAULT_PERM), read-only (may read, changes nothing; claude, codex, opencode,"
+        default="all",
+        help="all (default, yolo), read-only (may read, changes nothing; claude, codex, opencode,"
         " zcode) or deny (no tools: a text-only answer); the deprecated scoped:PATHS and ask warn"
         " and run as all",
     )
@@ -4519,7 +5024,7 @@ def main():
         default=env_float("ACP_RUN_HANDSHAKE_TIMEOUT"),
         metavar="SECS",
         help="seconds for initialize and for session/new, each (default 40,"
-        " claude 90; env ACP_RUN_HANDSHAKE_TIMEOUT)",
+        " claude 90, kiro 120; env ACP_RUN_HANDSHAKE_TIMEOUT)",
     )
     ap.add_argument(
         "--session-id",
@@ -4578,6 +5083,8 @@ def main():
         help="reopen this ACP session (session/load or session/resume) instead"
         " of starting a new one",
     )
+    ap.add_argument("--go-advisory", action="store_true",
+                    help="explicit bounded read-only OpenCode Go advice; requires --perm read-only and --timeout <=600")
     a = ap.parse_args()
     bad = [k for k in a.tripwire_exempt_kinds.split(',') if k and k not in TRIPWIRE_EXEMPTABLE]
     if bad:
@@ -4589,7 +5096,8 @@ def main():
         ap.error(f"--perm deny: {DENY_UNSUPPORTED[a.agent]}")
     if a.list:
         for n, (c, auth) in AGENTS.items():
-            ok = "ok " if shutil.which(c[0]) else "-- "
+            exe = agent_executable(c)
+            ok = "ok " if shutil.which(exe) else "-- "
             print(f"{ok}{n:9} {' '.join(c)}" + (f"  (auth {auth})" if auth else ""))
         return 0
     if a.agent in OPERATOR_GATED and a.agent not in operator_approved():
@@ -4597,6 +5105,9 @@ def main():
                  f" ({OPERATOR_GATED[a.agent]}); once given, set {APPROVAL_ENV}={a.agent}")
     if a.agent not in AGENTS:
         ap.error(f"agent must be one of: {', '.join(AGENTS)}")
+    why = omp_model_refusal(a)
+    if why:
+        ap.error(why)
     if not (a.perm in (*PERMS, "ask") or a.perm.startswith("scoped:")):
         ap.error("--perm must be all, read-only or deny")
     if a.perm == "read-only" and a.agent not in READONLY_AGENTS:
@@ -4612,6 +5123,35 @@ def main():
         ap.error("--inbox and --show-thinking need --interactive")
     if a.all_models and not a.info:
         ap.error("--all-models needs --info")
+    if a.agent == "opencode" and not a.info:
+        if not a.model or "/" not in a.model:
+            ap.error("opencode prompt runs require --model provider/model so the Go cost policy can be checked")
+        if a.model != a.model.strip():
+            ap.error("opencode --model must not have leading or trailing whitespace")
+        if is_go_model(a.model):
+            try:
+                go_policy = load_go_policy()
+            except ConfigError as e:
+                ap.error(str(e))
+            why = go_policy.refusal(a.model, advisory=a.go_advisory, timeout=a.timeout,
+                                    perm=a.perm, context=a.context)
+            if why:
+                ap.error(why)
+            if (a.perm in RESTRICTED_PERMS or strip_requested(a)) and not a.interactive and not keep_user_config(a):
+                try:  # this launch gets a sanitized config: its only plugin is the trusted guard, which must exist
+                    go_guard_dir()
+                except ConfigError as e:
+                    ap.error(str(e))
+            if any(str(value).split("=", 1)[0].lower() in ("model", "modelid", "model_id", "provider", "providerid") for value in a.set):
+                ap.error("Go model selection must use --model, not --set")
+            if a.go_advisory and a.interactive:
+                ap.error("Go advisory runs are single-turn; --interactive is refused")
+            if go_policy.classification(a.model) == "advisory":
+                if a.verify is not None or a.prompt_retries:
+                    ap.error("Go advisory use cannot run --verify or prompt retries")
+                a.wrapup_grace = 0
+                a.wrapup = None
+                a.go_bounded = True  # prompt_turn refuses every deadline extension (extend_deadline)
     check_static(a)
     if a.prompt_retries < 0:
         ap.error("--prompt-retries must be 0 or more")
@@ -4647,8 +5187,21 @@ def main():
         else:
             ap.error("give a prompt with -p, -f or stdin")
     cmd = YOLO_CMD.get(a.agent, AGENTS[a.agent][0])
-    if not shutil.which(cmd[0]):
-        raise SystemExit(f"acp-run: {cmd[0]} not installed")
+    exe = agent_executable(cmd)
+    if not shutil.which(exe):
+        wait, poll = bin_wait_settings()
+        if wait > 0:
+            print(f"acp-run: {exe} not found on PATH; waiting up to {wait:g} s in case an upgrade "
+                  f"is relinking it (ACP_RUN_BIN_WAIT=0 disables)", file=sys.stderr)
+            deadline = time.monotonic() + wait
+            while not shutil.which(exe) and time.monotonic() < deadline:
+                time.sleep(min(poll, max(0.0, deadline - time.monotonic())))
+            found = shutil.which(exe)
+            if found:
+                bin_settle(found, poll)
+        if not shutil.which(exe):
+            print(f"acp-run: {exe} not installed", file=sys.stderr)
+            sys.exit(EXIT_NOT_INSTALLED)
     if a.max_load is not None and not a.info:
         why = load_guard(a.max_load, a.load_wait)
         if why:

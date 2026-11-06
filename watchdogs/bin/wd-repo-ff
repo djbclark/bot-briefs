@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Zero-token keeper: fast-forward one git checkout to origin/<default> on a timer (monit).
+# Touches nothing unless the tree is clean and on the default branch; otherwise logs and exits non-zero.
+# Customize REPO (and optionally BRANCH) below, or set WD_REPO_FF_PATH / WD_REPO_FF_BRANCH.
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+R="${WD_REPO_FF_PATH:-$HOME/src/example-repo}"
+LOG="${WD_REPO_FF_LOG:-$HOME/.local/state/watchdogs/wd-repo-ff.log}"
+mkdir -p "$(dirname "$LOG")"
+log(){ echo "$(date '+%F %T %Z') $*" >>"$LOG"; }
+[ -d "$R/.git" ] || { log "SKIP: $R is not a checkout"; exit 2; }
+b=$(git -C "$R" symbolic-ref --short -q HEAD) || { log "SKIP: detached HEAD"; exit 3; }
+def=$(git -C "$R" symbolic-ref --short -q refs/remotes/origin/HEAD); def=${def#origin/}
+def=${WD_REPO_FF_BRANCH:-${def:-main}}
+[ "$b" = "$def" ] || { log "SKIP: on branch $b, not $def"; exit 3; }
+[ -z "$(git -C "$R" status --porcelain)" ] || { log "SKIP: tree not clean"; exit 4; }
+old=$(git -C "$R" rev-parse HEAD)
+git -C "$R" fetch -q origin || { log "FAIL: fetch"; exit 5; }
+git -C "$R" merge -q --ff-only "origin/$def" >>"$LOG" 2>&1 || { log "FAIL: ff-only merge (diverged?)"; exit 6; }
+new=$(git -C "$R" rev-parse HEAD)
+[ "$old" = "$new" ] || log "updated $old -> $new"
+exit 0

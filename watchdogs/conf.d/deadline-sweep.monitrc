@@ -1,0 +1,4 @@
+# Optional deadline sweep. Monit daemon cycle is 30s; every 10 cycles = every 5 minutes.
+check program deadline-sweep with path "/home/box/agent-data/shared/watchdogs/bin/wd-deadline-sweep" with timeout 120 seconds
+    every 10 cycles
+    if status != 0 then alert

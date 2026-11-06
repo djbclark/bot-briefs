@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Zero-token deadline enforcer: runs a local `deadline sweep` CLI (if installed).
+# Replaces an OS-specific scheduler sweep. Run by monit every 5 min.
+# Requires: a `deadline` binary on PATH that supports `sweep --no-agents`.
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+if ! command -v deadline >/dev/null 2>&1; then
+  echo "wd-deadline-sweep: deadline CLI not installed" >&2
+  exit 0  # not an error for hosts without the tool
+fi
+exec deadline sweep --no-agents
