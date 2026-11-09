@@ -18,7 +18,7 @@
           </div>
 
           <div class="in-prog-text">
-            <span class="in-prog-speaker">User:</span> {{ entry.latest_action.text }}
+            <span class="in-prog-speaker">Daniel:</span> {{ entry.latest_action.text }}
           </div>
 
           {% if entry.latest_action.bot_note %}
@@ -34,7 +34,7 @@
               <div class="earlier-list">
                 {% for prev in entry.earlier_actions %}
                   <div class="earlier-item">
-                    <div><span class="in-prog-speaker">User:</span> {{ prev.text }}</div>
+                    <div><span class="in-prog-speaker">Daniel:</span> {{ prev.text }}</div>
                     {% if prev.bot_note %}
                       <div><span class="in-prog-speaker">Bot:</span> {{ prev.bot_note }}</div>
                     {% endif %}

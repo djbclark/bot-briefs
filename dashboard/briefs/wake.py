@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import subprocess
+import sys
 import time
 from typing import Optional
 
@@ -21,6 +22,14 @@ def get_notify_cmd() -> str:
     return os.environ.get("BRIEFS_NOTIFY_CMD", "/home/box/.local/bin/notify-bot")
 
 
+def _notify_argv(*args: str) -> list[str]:
+    """Build argv for notify subprocess (use sys.executable for .py helpers in Nix/tests)."""
+    cmd = get_notify_cmd()
+    if cmd.endswith(".py"):
+        return [sys.executable, cmd, *args]
+    return [cmd, *args]
+
+
 def notify_configured(cli_name: str, use_cache: bool = True) -> bool:
     """Check if notify-bot has the bot configured. Caches results ~60 seconds."""
     now = time.monotonic()
@@ -32,7 +41,7 @@ def notify_configured(cli_name: str, use_cache: bool = True) -> bool:
     notify_cmd = get_notify_cmd()
     try:
         proc = subprocess.run(
-            [notify_cmd, "--list"],
+            _notify_argv("--list"),
             capture_output=True,
             text=True,
             timeout=10,
@@ -92,8 +101,7 @@ def trigger_dispatch(db_path: str, action_ids: list[int]) -> str:
 
         try:
             proc = subprocess.run(
-                [
-                    notify_cmd,
+                _notify_argv(
                     "chief-of-staff",
                     "-f",
                     "dashboard",
@@ -102,7 +110,7 @@ def trigger_dispatch(db_path: str, action_ids: list[int]) -> str:
                     "-s",
                     "Dashboard submit",
                     msg,
-                ],
+                ),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=30,
@@ -163,14 +171,23 @@ def wake_bot(conn: sqlite3.Connection, action_id: int) -> str:
 
     notify_cmd = get_notify_cmd()
     message = (
-        f'The operator left a dashboard action for you: #{action_id} ({act_type}) on "{title}". '
+        f'Daniel left a dashboard action for you: #{action_id} ({act_type}) on "{title}". '
         f"Run `brief inbox --bot {cli_name} --json`, handle it under your normal rules, "
         f'then `brief ack {action_id} --status applied|failed --note "..."`.'
     )
 
     try:
         proc = subprocess.run(
-            [notify_cmd, cli_name, "-f", "dashboard", "-m", "none", "-s", f"Dashboard action #{action_id}", message],
+            _notify_argv(
+                cli_name,
+                "-f",
+                "dashboard",
+                "-m",
+                "none",
+                "-s",
+                f"Dashboard action #{action_id}",
+                message,
+            ),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,

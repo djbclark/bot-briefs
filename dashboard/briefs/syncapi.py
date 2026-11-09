@@ -3,7 +3,7 @@
 Only registered when BRIEFS_SYNC_TOKEN_FILE is set (the VPS copy). The box copy never loads this.
 
 Box -> VPS:  POST /sync/push     idempotent row upserts/deletes of bots, reports, items, report_items, actions
-VPS -> box:  GET  /sync/actions  actions the user created/changed on the VPS UI that the box has not applied yet
+VPS -> box:  GET  /sync/actions  actions Daniel created/changed on the VPS UI that the box has not applied yet
              POST /sync/actions/ack  the box reports "applied as box action N" (VPS renumbers to N) or "rejected"
 Status:      GET  /sync/status (token) and GET /healthz/mirror (no token, timestamps only)
 
@@ -62,7 +62,7 @@ def init_sync_schema(conn: sqlite3.Connection) -> None:
     with conn:
         conn.executescript(f"""
         CREATE TABLE IF NOT EXISTS sync_meta (k TEXT PRIMARY KEY, v TEXT);
-        -- One row per action the user made on the VPS UI. cur_id is its id in `actions` right now
+        -- One row per action Daniel made on the VPS UI. cur_id is its id in `actions` right now
         -- (vps-range id until the box confirms, then the box's id). dirty=1: box has not seen the latest version.
         CREATE TABLE IF NOT EXISTS sync_origin (
             cur_id INTEGER PRIMARY KEY, orig_id INTEGER, mapped INTEGER DEFAULT 0,
@@ -253,7 +253,7 @@ def apply_ack(conn: sqlite3.Connection, items: list[dict[str, Any]]) -> int:
                 conn.execute("UPDATE sync_origin SET cur_id=?, mapped=1 WHERE cur_id=?", (box_id, cur_id))
                 cur_id = box_id
             cur = conn.execute("SELECT * FROM actions WHERE id=?", (cur_id,)).fetchone()
-            # Only clear `dirty` if the user did not change it again after the box fetched it.
+            # Only clear `dirty` if Daniel did not change it again after the box fetched it.
             if cur is not None and action_version(cur) == it.get("version"):
                 conn.execute("UPDATE sync_origin SET dirty=0 WHERE cur_id=?", (cur_id,))
             n += 1

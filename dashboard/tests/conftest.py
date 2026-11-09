@@ -1,16 +1,27 @@
 from __future__ import annotations
 
 import os
-
-# Tests run as this placeholder login; set before briefs.config is imported.
-os.environ.setdefault("BRIEFS_ALLOWED_LOGINS", "user@example.com")
+import sys
 from pathlib import Path
 from typing import Generator
+
+_DASHBOARD = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_DASHBOARD))
+# Pytest may preload the installed wheel; force the source tree + fresh config load.
+for _name in list(sys.modules):
+    if _name == "briefs" or _name.startswith("briefs."):
+        del sys.modules[_name]
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures"
+os.environ["BRIEFS_CONFIG_FILE"] = str(_FIXTURES / "briefs-test.toml")
+os.environ.setdefault("BRIEFS_ALLOWED_LOGINS", "user@example.com")
 
 import pytest
 from fastapi.testclient import TestClient
 
-from briefs.config import REPO_ROOT
+from briefs.config import BOTS, REPO_ROOT
+
+assert any(b.slug == "radar" for b in BOTS), f"expected test bot inventory, got {[b.slug for b in BOTS]}"
 from briefs.db import connect, init_schema
 from briefs.importer import run_import
 from briefs.web import create_app

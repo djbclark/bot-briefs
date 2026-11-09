@@ -394,7 +394,7 @@ def parse_brief(md: str, default_date: Optional[str] = None) -> dict[str, Any]:
 
     if not items:
         for line in lines:
-            m_inl = re.match(r"^\s*(?:Open needing operator|Needs operator|Needs you)[^:]{0,40}:\s*(.+)$", line, re.I)
+            m_inl = re.match(r"^\s*(?:Open needing Daniel|Needs Daniel|Needs you)[^:]{0,40}:\s*(.+)$", line, re.I)
             if not m_inl:
                 continue
             for part in re.split(r";\s*(?=\d+\s)", m_inl.group(1)):
@@ -406,7 +406,7 @@ def parse_brief(md: str, default_date: Optional[str] = None) -> dict[str, Any]:
                     "display_id": m_p.group(1),
                     "parent_display_id": None,
                     "position": pos,
-                    "section": "Needs you",
+                    "section": "Needs Daniel",
                     "lines": [m_p.group(2).strip().rstrip(".")],
                     "flags": extract_flags(m_p.group(2)),
                 })
