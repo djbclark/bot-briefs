@@ -12,3 +12,4 @@ secrets.env
 .env
 config.local.env
 *.local.env
+result

@@ -41,10 +41,11 @@ from briefs.config import (
     ALLOWED_LOGINS,
     BOTS,
     BRIEFS_DB,
-    REPO_ROOT,
+    PACKAGE_ROOT,
     TZ_ET,
     bot_cli_name,
     find_bot,
+    logs_dir,
     now_et,
     today_et,
 )
@@ -74,10 +75,7 @@ SYNC_TOKEN_FILE = os.environ.get("BRIEFS_SYNC_TOKEN_FILE", "")
 logger = logging.getLogger("briefs.web")
 logger.setLevel(logging.INFO)
 
-# Access log file
-LOGS_DIR = REPO_ROOT / "logs"
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
-ACCESS_LOG_FILE = LOGS_DIR / "access.log"
+ACCESS_LOG_FILE = logs_dir() / "access.log"
 
 # Markdown renderer with table support and target="_blank" on links
 md_engine = MarkdownIt("commonmark", {"html": False}).enable("table")
@@ -125,8 +123,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
 
     app = FastAPI(title="Bot Briefs", docs_url=None, redoc_url=None)
 
-    static_dir = REPO_ROOT / "briefs" / "static"
-    templates_dir = REPO_ROOT / "briefs" / "templates"
+    static_dir = PACKAGE_ROOT / "static"
+    templates_dir = PACKAGE_ROOT / "templates"
     templates = Jinja2Templates(directory=str(templates_dir))
     templates.env.filters["md"] = lambda t: Markup(render_markdown(t or ""))
     templates.env.filters["safe_url"] = safe_url
@@ -928,4 +926,14 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     return app
 
 
-app = create_app()
+_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy `app` for uvicorn (`briefs.web:app`) without side effects on import (pytest)."""
+    global _app
+    if name == "app":
+        if _app is None:
+            _app = create_app()
+        return _app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

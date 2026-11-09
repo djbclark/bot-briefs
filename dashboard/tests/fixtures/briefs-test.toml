@@ -1,0 +1,107 @@
+# Neutral test inventory (no personal UUIDs). Loaded by tests/conftest.py only.
+[auth]
+allowed_logins = ["user@example.com"]
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000001"
+slug = "cos"
+name = "Chief of Staff"
+sort = 0
+area_default = "admin"
+cli_name = "chief-of-staff"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000002"
+slug = "radar"
+name = "Radar"
+sort = 10
+area_default = "code"
+cli_name = "radar"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000003"
+slug = "zero"
+name = "Zero"
+sort = 20
+area_default = "email"
+cli_name = "zero"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000004"
+slug = "family"
+name = "Family"
+sort = 30
+area_default = "family"
+cli_name = "family"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000005"
+slug = "money"
+name = "Money"
+sort = 40
+area_default = "finance"
+cli_name = "money"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000006"
+slug = "business"
+name = "Business"
+sort = 50
+area_default = "business"
+cli_name = "business"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000007"
+slug = "chess"
+name = "Chess"
+sort = 60
+area_default = "chess"
+cli_name = "chess"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000008"
+slug = "pika"
+name = "Pika"
+sort = 70
+area_default = "pika"
+cli_name = "pika"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000009"
+slug = "friends"
+name = "Friends"
+sort = 80
+area_default = "social"
+cli_name = "friends"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000010"
+slug = "project"
+name = "Project"
+sort = 90
+area_default = "project"
+cli_name = "project-bot"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000011"
+slug = "oneoffs"
+name = "One-offs"
+sort = 100
+area_default = "misc"
+cli_name = "one-offs"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000012"
+slug = "coding"
+name = "Coding"
+sort = 110
+area_default = "code"
+cli_name = "coding"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000013"
+slug = "other"
+name = "Other"
+sort = 120
+area_default = "misc"
+cli_name = "other"

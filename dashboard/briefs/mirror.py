@@ -5,7 +5,7 @@ Design (state replication, not an event hook, so no `brief` code path can be mis
     `rowstate` in a private sidecar DB (state.db). Rows whose hash differs are pushed to the VPS, rows that
     vanished are pushed as deletes. A row is marked "sent" only after the VPS answered 2xx, so a frozen box,
     a dead VPS or a crash simply means the same diff is sent again later. The VPS upserts by id, so replays are safe.
-  * Pull side: actions the user made on the VPS UI are fetched, stored once in the box DB (idempotent through the
+  * Pull side: actions Daniel made on the VPS UI are fetched, stored once in the box DB (idempotent through the
     additive table `mirror_vps_actions`, written in the same transaction as the action), then acknowledged so
     the VPS renumbers them to the box id. `brief inbox` / `brief actions` therefore work unchanged.
   * Box is authoritative: after a VPS-made action is taken past queued/submitted/pending on the box,
@@ -38,7 +38,7 @@ HOME = Path.home()
 STATE_DIR = Path(os.environ.get("BRIEFS_MIRROR_STATE_DIR", HOME / ".local/share/briefs-mirror"))
 TOKEN_FILE = Path(os.environ.get("BRIEFS_MIRROR_TOKEN_FILE", HOME / ".config/briefs-mirror/token"))
 STATUS_DIR = Path(os.environ.get("BRIEFS_MIRROR_STATUS_DIR", "/home/box/agent-data/shared/briefs-mirror"))
-URL = os.environ.get("BRIEFS_MIRROR_URL", "https://vps-primary.example-tailnet.ts.net").rstrip("/")
+URL = os.environ.get("BRIEFS_MIRROR_URL", "https://briefs.example-tailnet.ts.net").rstrip("/")
 SOCKS = os.environ.get("BRIEFS_MIRROR_SOCKS", "localhost:1055")  # "" = direct (tests)
 INTERVAL = float(os.environ.get("BRIEFS_MIRROR_INTERVAL", "10"))
 HEARTBEAT_S = 60

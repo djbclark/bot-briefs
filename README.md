@@ -14,6 +14,8 @@ tailnet, plus a Chief of Staff that ranks everything into one daily high-priorit
 dashboard actions back to the right bot. Details: [docs/architecture.md](docs/architecture.md).
 Two-minute pitch for the user: [docs/executive-summary.md](docs/executive-summary.md).
 
+Reproducible Nix packaging for the deployed dashboard (flake, NixOS module, runtime TOML) is documented in [docs/nix-deployment.md](docs/nix-deployment.md).
+
 ## 2. Rules of engagement (follow exactly)
 
 1. **Interview first.** Run [docs/interview.md](docs/interview.md) (3-5 questions at a time) before writing anything

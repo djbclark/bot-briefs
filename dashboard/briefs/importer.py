@@ -311,7 +311,7 @@ def run_import(
                 try:
                     with open(p, "r", encoding="utf-8") as fh:
                         _r_items = parse_brief(fh.read(), default_date=d)["items"]
-                        _radar_has_items = bool(_r_items) and not any(i.get("section") in ("Needs operator", "Needs you") for i in _r_items)
+                        _radar_has_items = bool(_r_items) and not any(i.get("section") == "Needs Daniel" for i in _r_items)
                 except OSError:
                     _radar_has_items = False
                 if radar_bot and _radar_has_items:
@@ -381,7 +381,7 @@ def run_import(
             sheet_url = parsed["sheet_url"]
             items = parsed["items"]
             # Compact state notes (no items) lose to the brief actually sent in chat for that date.
-            inline_only = (not items) or all(i.get("section") in ("Needs operator", "Needs you") for i in items)
+            inline_only = (not items) or all(i.get("section") == "Needs Daniel" for i in items)
             if inline_only and any(k[0] == radar_bot.id and k[1] == rep_date for k in candidate_transcripts):
                 continue
 

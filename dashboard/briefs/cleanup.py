@@ -15,7 +15,7 @@ from typing import Any, Callable
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from briefs.config import REPO_ROOT, now_et
+from briefs.config import now_et, state_home
 
 PLAN_SCHEMA = "zero-cleanup-plan/v2"
 ACTIONS = ["kill", "archive", "keep", "archive_unsub", "delete", "delete_unsub", "delete_hist"]
@@ -43,18 +43,18 @@ UNSUB_ACTIONS = {"kill", "archive_unsub", "delete_unsub"}
 HISTORY_ACTIONS = {"kill", "delete_hist"}
 MONEY_ACTIONS = {"rule", "archive", "keep", "archive_unsub"}  # "rule" = leave to daily rule (no action)
 # Sensitive stacks (s["sensitive"] set) are shown, default Keep, and may take any action in s["allowed"]
-# (operator, 2026-10-26). Teammate-owned mail is never in the dataset.
+# (Daniel, 2026-10-26). Teammate-owned mail is never in the dataset.
 PLAN_ID_RE = re.compile(r"^[A-Za-z0-9._-]{8,120}$")
 MAX_PLAN_BYTES = 2_000_000
 ZERO_SLUG = "zero"
 
 
 def dataset_path() -> Path:
-    return Path(os.environ.get("BRIEFS_CLEANUP_DATASET") or (REPO_ROOT / "data" / "cleanup" / "dataset.json"))
+    return Path(os.environ.get("BRIEFS_CLEANUP_DATASET") or (state_home() / "data" / "cleanup" / "dataset.json"))
 
 
 def plans_dir() -> Path:
-    return Path(os.environ.get("BRIEFS_CLEANUP_PLANS_DIR") or (REPO_ROOT / "data" / "cleanup-plans"))
+    return Path(os.environ.get("BRIEFS_CLEANUP_PLANS_DIR") or (state_home() / "data" / "cleanup-plans"))
 
 
 _cache: dict[str, Any] = {}
@@ -83,21 +83,21 @@ def plan_checksum(plan: dict[str, Any]) -> str:
 RULE_HELP = {
     "github-bot-comments": "GitHub notification mail written by bots (Cursor, Codex, Linear, CodeRabbit, Codecov, Vercel, Paseo, GitHub Actions).",
     "github-ci-failed-cancelled": "GitHub Actions \"Run failed\" / \"Run cancelled\" notices.",
-    "promotions-7d": "Anything in the Promotions tab older than 7 days, except <important-sender>, CVS, <newsletter senders>, EZFacility, Pika, chess club/business, and anything mentioning receipt/invoice/order.",
+    "promotions-7d": "Anything in the Promotions tab older than 7 days, except Mochi, CVS, Chabad Sudbury, Beth Elohim, EZFacility, Pika, Maynard chess/daycare, and anything mentioning receipt/invoice/order.",
     "ebay-saved-search": "eBay saved-search alerts (\"NEW!\" / \"Latest price\").",
-    "library-30d": "Local library mail older than 30 days.",
+    "library-minlib-30d": "Minuteman Library mail older than 30 days.",
     "nextdoor": "Everything from Nextdoor.",
     "skej-2d": "Skej scheduling-assistant mail older than 2 days.",
-    "newsletter-a-14d": "<newsletter sender A> mail older than 14 days.",
-    "wordpress-club-wiki": "WordPress notifications from the club wiki.",
+    "chabad-sudbury-14d": "Chabad Sudbury mail older than 14 days.",
+    "wordpress-maynard-wiki": "WordPress notifications from maynard.wiki.",
     "beehiiv": "Everything sent through beehiiv newsletters.",
-    "newsletter-b-14d": "<newsletter sender B> bulletin older than 14 days.",
+    "beth-elohim-starlite-14d": "Beth Elohim \"Star-Lite\" bulletin older than 14 days.",
     "google-marketing-7d": "Google One / Maps / generic Google marketing older than 7 days.",
     "yelp-60d": "Yelp mail older than 60 days.",
-    "newsletter-c-all": "Everything from <newsletter sender C>.",
+    "exmuslims-org": "Everything from exmuslims.org.",
     "zulip-digest": "Zulip digest emails.",
     "discourse-summaries": "Discourse forum summary emails.",
-    "sender-promos-7d": "<important-sender> promotions older than 7 days (other <important-sender> mail stays).",
+    "mochi-promos-7d": "Mochi promotions older than 7 days (other Mochi mail stays).",
     "google-data-shares-7d": "\"You shared some Google Account data\" notices older than 7 days.",
 }
 
@@ -234,7 +234,7 @@ def register(app: FastAPI, templates: Any, common_context: Callable[..., dict[st
                 ts = now_et().isoformat()
                 payload = {"plan_id": plan["plan_id"], "path": str(path), "chunk": plan["source"]["chunk"],
                            "totals": plan.get("totals", {}), "checksum": plan["checksum"],
-                           "note": "Bulk cleanup plan. Archive first; Trash/Unsub only after user confirms counts."}
+                           "note": "Bulk cleanup plan. Archive first; Trash/Unsub only after Daniel confirms counts."}
                 with conn:
                     cur = conn.execute(
                         """INSERT INTO actions (item_id, bot_id, type, payload_json, author, status,

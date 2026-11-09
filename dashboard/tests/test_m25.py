@@ -34,22 +34,24 @@ from briefs.web import create_app
 
 
 def _make_stub_notify(tmp_path: Path, conf_bots: list[str]) -> Path:
-    """Create an executable stub notify-bot script for testing."""
-    stub = tmp_path / "stub_notify.sh"
-    lines = [
-        "#!/usr/bin/env bash",
-        'if [ "$1" = "--list" ]; then',
-    ]
-    for b in conf_bots:
-        lines.append(f'  echo "{b} configured=yes"')
-    lines.extend([
-        '  exit 0',
-        'fi',
-        'log_file="${STUB_NOTIFY_LOG:-/tmp/stub_notify.log}"',
-        'echo "$@" >> "$log_file"',
-        'exit 0',
-    ])
-    stub.write_text("\n".join(lines), encoding="utf-8")
+    """Create an executable stub notify-bot script for testing (Python: Nix check env has no bash)."""
+    stub = tmp_path / "stub_notify.py"
+    bots_repr = repr(conf_bots)
+    stub.write_text(
+        f"""#!/usr/bin/env python3
+import os, sys
+if len(sys.argv) > 1 and sys.argv[1] == "--list":
+    for name in {bots_repr}:
+        print(f"{{name}} configured=yes")
+    raise SystemExit(0)
+log = os.environ.get("STUB_NOTIFY_LOG", "/tmp/stub_notify.log")
+os.makedirs(os.path.dirname(log) or ".", exist_ok=True)
+with open(log, "a", encoding="utf-8") as f:
+    f.write(" ".join(sys.argv[1:]) + "\\n")
+raise SystemExit(0)
+""",
+        encoding="utf-8",
+    )
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return stub
 
@@ -284,25 +286,22 @@ def test_send_endpoint_and_dispatch(temp_db: str, tmp_path: Path, monkeypatch) -
     conn.close()
 
     app = create_app(temp_db)
-    client = TestClient(app, base_url="http://testserver")
+    with TestClient(app, base_url="http://testserver") as client:
+        r = client.post(
+            f"/i/{item_id}/send",
+            data={"text": "Investigate immediately"},
+            headers={
+                "Tailscale-User-Login": "user@example.com",
+                "HX-Request": "true",
+                "Origin": "http://testserver",
+            },
+        )
+        assert r.status_code == 200
+        assert r.text == ""
+        trigger_data = json.loads(r.headers.get("HX-Trigger", "{}"))
+        assert trigger_data.get("inprogressChanged") is True
+        assert trigger_data.get("draftClear", {}).get("item") == item_id
 
-    # Send reply
-    r = client.post(
-        f"/i/{item_id}/send",
-        data={"text": "Investigate immediately"},
-        headers={
-            "Tailscale-User-Login": "user@example.com",
-            "HX-Request": "true",
-            "Origin": "http://testserver",
-        },
-    )
-    assert r.status_code == 200
-    assert r.text == ""  # empty 200 for outerHTML removal
-    trigger_data = json.loads(r.headers.get("HX-Trigger", "{}"))
-    assert trigger_data.get("inprogressChanged") is True
-    assert trigger_data.get("draftClear", {}).get("item") == item_id
-
-    # Check DB
     conn = connect(temp_db)
     act = conn.execute("SELECT * FROM actions WHERE item_id = ? AND type = 'reply'", (item_id,)).fetchone()
     assert act is not None
@@ -311,12 +310,10 @@ def test_send_endpoint_and_dispatch(temp_db: str, tmp_path: Path, monkeypatch) -
     assert act["wake_status"] == "dispatch sent"
     conn.close()
 
-    # Verify stub notify log was called once with chief-of-staff and "1 action submitted"
     log_content = log_file.read_text(encoding="utf-8")
     assert "chief-of-staff" in log_content
     assert "1 action submitted" in log_content
 
-    # Test not-configured path:
     clear_notify_cache()
     stub_unconf = _make_stub_notify(tmp_path, ["other-bot"])
     monkeypatch.setenv("BRIEFS_NOTIFY_CMD", str(stub_unconf))
@@ -327,25 +324,24 @@ def test_send_endpoint_and_dispatch(temp_db: str, tmp_path: Path, monkeypatch) -
     item2_id = items2[0]["id"]
     conn.close()
 
-    r2 = client.post(
-        f"/i/{item2_id}/send",
-        data={"text": "Fix this one too"},
-        headers={
-            "Tailscale-User-Login": "user@example.com",
-            "HX-Request": "true",
-            "Origin": "http://testserver",
-        },
-    )
-    assert r2.status_code == 200
+    with TestClient(create_app(temp_db), base_url="http://testserver") as client:
+        r2 = client.post(
+            f"/i/{item2_id}/send",
+            data={"text": "Fix this one too"},
+            headers={
+                "Tailscale-User-Login": "user@example.com",
+                "HX-Request": "true",
+                "Origin": "http://testserver",
+            },
+        )
+        assert r2.status_code == 200
+        r_page = client.get("/", headers={"Tailscale-User-Login": "user@example.com"})
+        assert "Processing trigger not configured yet" in r_page.text
 
     conn = connect(temp_db)
     act2 = conn.execute("SELECT * FROM actions WHERE item_id = ?", (item2_id,)).fetchone()
     assert act2["wake_status"] == "dispatch not configured"
     conn.close()
-
-    # Verify warning banner is displayed on GET /
-    r_page = client.get("/", headers={"Tailscale-User-Login": "user@example.com"})
-    assert "Processing trigger not configured yet" in r_page.text
 
 
 def test_queue_and_submit_bar(temp_db: str) -> None:
@@ -438,36 +434,7 @@ def test_submit_all_ordering_and_dispatch(temp_db: str, tmp_path: Path, monkeypa
     conn.close()
 
     app = create_app(temp_db)
-    client = TestClient(app, base_url="http://testserver")
 
-    # Call /submit-all with empty drafts -> 400
-    r_empty = client.post(
-        "/submit-all",
-        json={"drafts": []},
-        headers={
-            "Tailscale-User-Login": "user@example.com",
-            "HX-Request": "true",
-            "Origin": "http://testserver",
-        },
-    )
-    # Note: there is 1 pre-existing queued action, so submit-all will submit that queued action!
-    # Let's verify that submitting empty drafts submits the queued action
-    assert r_empty.status_code == 200
-    assert "Submitted 1" in r_empty.text
-
-    # Now with 0 queued actions and empty drafts -> 400
-    r_empty2 = client.post(
-        "/submit-all",
-        json={"drafts": []},
-        headers={
-            "Tailscale-User-Login": "user@example.com",
-            "HX-Request": "true",
-            "Origin": "http://testserver",
-        },
-    )
-    assert r_empty2.status_code == 400
-
-    # Now submit drafts for all the items
     drafts = [
         {"item_id": zero_p3_id, "text": "Draft for zero P3"},
         {"item_id": radar_p1_id, "text": "Draft for radar P1"},
@@ -478,23 +445,47 @@ def test_submit_all_ordering_and_dispatch(temp_db: str, tmp_path: Path, monkeypa
         {"item_id": dc_older_id, "text": "Draft for dc older"},
     ]
 
-    r_sub = client.post(
-        "/submit-all",
-        json={"drafts": drafts},
-        headers={
-            "Tailscale-User-Login": "user@example.com",
-            "HX-Request": "true",
-            "Origin": "http://testserver",
-        },
-    )
-    assert r_sub.status_code == 200
-    assert f"Submitted {len(drafts)}" in r_sub.text
+    with TestClient(app, base_url="http://testserver") as client:
+        r_empty = client.post(
+            "/submit-all",
+            json={"drafts": []},
+            headers={
+                "Tailscale-User-Login": "user@example.com",
+                "HX-Request": "true",
+                "Origin": "http://testserver",
+            },
+        )
+        assert r_empty.status_code == 200
+        assert "Submitted 1" in r_empty.text
 
-    trig = json.loads(r_sub.headers.get("HX-Trigger", "{}"))
-    assert trig.get("inprogressChanged") is True
-    assert trig.get("listChanged") is True
-    assert trig.get("queueChanged") is True
-    assert len(trig.get("draftsSubmitted", [])) == len(drafts)
+        r_empty2 = client.post(
+            "/submit-all",
+            json={"drafts": []},
+            headers={
+                "Tailscale-User-Login": "user@example.com",
+                "HX-Request": "true",
+                "Origin": "http://testserver",
+            },
+        )
+        assert r_empty2.status_code == 400
+
+        r_sub = client.post(
+            "/submit-all",
+            json={"drafts": drafts},
+            headers={
+                "Tailscale-User-Login": "user@example.com",
+                "HX-Request": "true",
+                "Origin": "http://testserver",
+            },
+        )
+        assert r_sub.status_code == 200
+        assert f"Submitted {len(drafts)}" in r_sub.text
+
+        trig = json.loads(r_sub.headers.get("HX-Trigger", "{}"))
+        assert trig.get("inprogressChanged") is True
+        assert trig.get("listChanged") is True
+        assert trig.get("queueChanged") is True
+        assert len(trig.get("draftsSubmitted", [])) == len(drafts)
 
     # Check ranking in DB
     conn = connect(temp_db)
@@ -800,13 +791,13 @@ def test_item_page_reply_send_and_queue(temp_db: str, tmp_path: Path, monkeypatc
     upsert_report(conn, "radar", "2026-10-23", "daily", "Radar Brief", "1. Radar Item\n   Details")
     item_id = conn.execute("SELECT id FROM items LIMIT 1").fetchone()["id"]
     conn.close()
-    client = TestClient(create_app(temp_db), base_url="http://testserver")
     h = {"Tailscale-User-Login": "user@example.com", "HX-Request": "true", "Origin": "http://testserver"}
-    r = client.post(f"/i/{item_id}/action", data={"type": "reply", "text": "later", "mode": "queue"}, headers=h)
-    assert r.status_code == 200
-    r = client.post(f"/i/{item_id}/action", data={"type": "reply", "text": "now", "mode": "send"}, headers=h)
-    assert r.status_code == 200
-    assert "Wake bot now" not in r.text
+    with TestClient(create_app(temp_db), base_url="http://testserver") as client:
+        r = client.post(f"/i/{item_id}/action", data={"type": "reply", "text": "later", "mode": "queue"}, headers=h)
+        assert r.status_code == 200
+        r = client.post(f"/i/{item_id}/action", data={"type": "reply", "text": "now", "mode": "send"}, headers=h)
+        assert r.status_code == 200
+        assert "Wake bot now" not in r.text
     conn = connect(temp_db)
     rows = conn.execute("SELECT status, wake_requested FROM actions ORDER BY id").fetchall()
     conn.close()
