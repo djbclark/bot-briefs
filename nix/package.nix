@@ -2,11 +2,9 @@
   lib,
   python3Packages,
   writeShellScriptBin,
-  linkFarm,
+  symlinkJoin,
 }:
 let
-  python = python3Packages.python;
-
   src = lib.cleanSourceWith {
     src = ../dashboard;
     filter =
@@ -78,14 +76,18 @@ let
       -cf - briefs ops/vps requirements.txt pyproject.toml config.example.toml
   '';
 
+  default = symlinkJoin {
+    name = "briefs";
+    paths = [
+      backupDb
+      notifyBotVps
+      briefsWeb
+      packApp
+    ];
+    meta.mainProgram = "briefs-web";
+  };
+
 in
 {
-  inherit briefsPy pyEnv backupDb notifyBotVps briefsWeb packApp;
-  default = linkFarm "briefs" [
-    { name = "briefsPy"; path = briefsPy; }
-    { name = "briefs-backup-db"; path = backupDb; }
-    { name = "notify-bot-vps"; path = notifyBotVps; }
-    { name = "briefs-web"; path = briefsWeb; }
-    { name = "briefs-pack-app"; path = packApp; }
-  ];
+  inherit briefsPy pyEnv backupDb notifyBotVps briefsWeb packApp default;
 }

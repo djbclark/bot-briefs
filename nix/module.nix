@@ -7,39 +7,52 @@
 let
   cfg = config.services.briefs;
 
-  briefsToml =
-    pkgs.writeText "briefs.toml" (
-      lib.generators.toTOML {
-        server = {
+  # When configFile is set, only that path is used (runtime private TOML outside the store).
+  # Generated store config is omitted so module option defaults cannot clobber allowlist/bots in TOML.
+  generatedToml = lib.generators.toTOML (
+    {
+      server =
+        {
           port = cfg.port;
           public_url = cfg.publicUrl;
           timezone = cfg.timezone;
-        } // lib.optionalAttrs (cfg.baseUrl != null) { base_url = cfg.baseUrl; };
+        }
+        // lib.optionalAttrs (cfg.baseUrl != null) { base_url = cfg.baseUrl; };
 
-        auth = {
-          allowed_logins = cfg.allowedLogins;
+      auth =
+        {
           allowed_hosts = cfg.allowedHosts;
         }
-        // lib.optionalAttrs (cfg.botIds != { }) { bot_ids = cfg.botIds; };
-
-        paths = {
-          db = "${cfg.stateDir}/data/briefs.db";
+        // lib.optionalAttrs (cfg.allowedLogins != [ ]) {
+          allowed_logins = cfg.allowedLogins;
+        }
+        // lib.optionalAttrs (cfg.botIds != { }) {
+          bot_ids = cfg.botIds;
         };
 
-        bots =
-          map (b: {
-            id = b.id;
-            slug = b.slug;
-            name = b.name;
-            sort = b.sort;
-            area_default = b.area_default;
-            cli_name = b.cli_name;
-          })
-          cfg.bots;
-      }
-    );
+      paths = {
+        db = "${cfg.stateDir}/data/briefs.db";
+      };
+    }
+    // lib.optionalAttrs (cfg.bots != [ ]) {
+      bots =
+        map (b: {
+          id = b.id;
+          slug = b.slug;
+          name = b.name;
+          sort = b.sort;
+          area_default = b.area_default;
+          cli_name = b.cli_name;
+        })
+        cfg.bots;
+    }
+  );
 
-  configFile = if cfg.configFile != null then cfg.configFile else briefsToml;
+  configFile =
+    if cfg.configFile != null then
+      cfg.configFile
+    else
+      pkgs.writeText "briefs-generated.toml" generatedToml;
 
   pkg = cfg.package;
 
@@ -86,9 +99,12 @@ in
       type = lib.types.nullOr lib.types.path;
       default = null;
       description = ''
-        Runtime TOML configuration path. When null, a file is generated from module options
-        (never put secrets in this file — reference secret paths via
-        {option}`services.briefs.syncTokenFile` and {option}`services.briefs.webhookEnvFile`).
+        Runtime TOML on the host (e.g. `/var/lib/briefs/config/briefs.toml`), outside the Nix store.
+        When set, {option}`services.briefs.allowedLogins`, {option}`services.briefs.bots`, and related
+        auth/inventory options are **not** used — only this file defines allowlist, bots, and URLs.
+        When null, a minimal generated TOML is used (empty bots list is omitted so packaged defaults apply).
+        Never put secrets in TOML; reference secret paths via
+        {option}`services.briefs.syncTokenFile` and {option}`services.briefs.webhookEnvFile`.
       '';
     };
 

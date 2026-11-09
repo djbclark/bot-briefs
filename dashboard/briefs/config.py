@@ -58,44 +58,46 @@ def _load_toml_config() -> None:
 
     if tz := server.get("timezone"):
         _TOML_TIMEZONE = str(tz)
+    def _apply_env(key: str, value: str) -> None:
+        if key not in os.environ:
+            os.environ[key] = value
+
     if port := server.get("port"):
-        os.environ.setdefault("BRIEFS_PORT", str(port))
+        _apply_env("BRIEFS_PORT", str(port))
     if public_url := server.get("public_url"):
-        os.environ.setdefault("BRIEFS_PUBLIC_URL", str(public_url))
+        _apply_env("BRIEFS_PUBLIC_URL", str(public_url))
     if base_url := server.get("base_url"):
-        os.environ.setdefault("BRIEFS_BASE_URL", str(base_url))
+        _apply_env("BRIEFS_BASE_URL", str(base_url))
 
     logins = auth.get("allowed_logins")
-    if logins is not None:
+    if logins is not None and "BRIEFS_ALLOWED_LOGINS" not in os.environ:
         if isinstance(logins, list):
-            os.environ.setdefault("BRIEFS_ALLOWED_LOGINS", ",".join(str(x) for x in logins if str(x).strip()))
+            _apply_env("BRIEFS_ALLOWED_LOGINS", ",".join(str(x) for x in logins if str(x).strip()))
         elif isinstance(logins, str):
-            os.environ.setdefault("BRIEFS_ALLOWED_LOGINS", logins)
+            _apply_env("BRIEFS_ALLOWED_LOGINS", logins)
 
     hosts = auth.get("allowed_hosts")
-    if hosts is not None:
+    if hosts is not None and "BRIEFS_ALLOWED_HOSTS" not in os.environ:
         if isinstance(hosts, list):
-            os.environ.setdefault("BRIEFS_ALLOWED_HOSTS", ",".join(str(h) for h in hosts if str(h).strip()))
+            _apply_env("BRIEFS_ALLOWED_HOSTS", ",".join(str(h) for h in hosts if str(h).strip()))
         elif isinstance(hosts, str):
-            os.environ.setdefault("BRIEFS_ALLOWED_HOSTS", hosts)
+            _apply_env("BRIEFS_ALLOWED_HOSTS", hosts)
 
     if db := paths.get("db"):
-        os.environ.setdefault("BRIEFS_DB", str(db))
+        _apply_env("BRIEFS_DB", str(db))
     if sources := paths.get("sources_dir"):
-        os.environ.setdefault("BRIEFS_SOURCES_DIR", str(sources))
+        _apply_env("BRIEFS_SOURCES_DIR", str(sources))
 
     bots = data.get("bots")
     if isinstance(bots, list) and bots:
         _TOML_BOTS = [b for b in bots if isinstance(b, dict)]
 
     bot_ids = auth.get("bot_ids") or server.get("bot_ids")
-    if isinstance(bot_ids, dict):
-        os.environ.setdefault(
-            "BRIEFS_BOT_IDS",
-            ",".join(f"{k}={v}" for k, v in bot_ids.items()),
-        )
-    elif isinstance(bot_ids, str):
-        os.environ.setdefault("BRIEFS_BOT_IDS", bot_ids)
+    if "BRIEFS_BOT_IDS" not in os.environ:
+        if isinstance(bot_ids, dict) and bot_ids:
+            _apply_env("BRIEFS_BOT_IDS", ",".join(f"{k}={v}" for k, v in bot_ids.items()))
+        elif isinstance(bot_ids, str) and bot_ids:
+            _apply_env("BRIEFS_BOT_IDS", bot_ids)
 
 
 def _load_local_env() -> None:

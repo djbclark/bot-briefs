@@ -20,7 +20,7 @@
           overlays = [ self.overlays.default ];
         };
         briefs = import ./nix/package.nix {
-          inherit (pkgs) lib python3Packages writeShellScriptBin linkFarm;
+          inherit (pkgs) lib python3Packages writeShellScriptBin symlinkJoin;
         };
       in
       {
@@ -102,6 +102,57 @@ assert any(b.slug == 'demo' for b in c.BOTS)
 "
               touch $out
             '';
+
+          briefs-package-bins =
+            pkgs.runCommand "briefs-package-bins" { } ''
+              pkg=${briefs.default}
+              for name in briefs-web briefs-backup-db notify-bot-vps briefs-pack-app; do
+                if [ ! -x "$pkg/bin/$name" ]; then
+                  echo "missing executable: $pkg/bin/$name" >&2
+                  ls -la "$pkg" "$pkg/bin" 2>&1 || true
+                  exit 1
+                fi
+              done
+              touch $out
+            '';
+
+          briefs-module-smoke =
+            pkgs.runCommand "briefs-module-smoke" {
+              nativeBuildInputs = [
+                briefs.pyEnv
+                pkgs.coreutils
+              ];
+            } ''
+              pkg=${briefs.default}
+              web="$pkg/bin/briefs-web"
+              backup="$pkg/bin/briefs-backup-db"
+              notify="$pkg/bin/notify-bot-vps"
+              test -x "$web" && test -x "$backup" && test -x "$notify"
+
+              "$web" --help >/dev/null
+
+              st=$(mktemp -d)
+              export BRIEFS_VPS_HOME="$st"
+              export BRIEFS_DB="$st/data/briefs.db"
+              export BRIEFS_BACKUP_DIR="$st/backups"
+              export BRIEFS_ALLOWED_LOGINS=smoke@example.test
+              mkdir -p "$st/data" "$st/backups"
+              ${briefs.pyEnv}/bin/python -c "
+from briefs.db import connect, init_schema
+c = connect('$st/data/briefs.db')
+init_schema(c)
+c.close()
+"
+              "$backup" | grep -q '^backup '
+
+              export BRIEFS_BIND_HOST=127.0.0.1
+              export BRIEFS_PORT=18999
+              timeout 3s "$web" 2>/dev/null || test $? -eq 124
+
+              "$notify" --list | grep -q 'chief-of-staff configured=no'
+
+              touch $out
+            '';
         };
 
         devShells.default = pkgs.mkShell {
@@ -120,7 +171,7 @@ assert any(b.slug == 'demo' for b in c.BOTS)
         let
           briefsPackages = import ./nix/package.nix {
             inherit (final) lib;
-            inherit (final) python3Packages writeShellScriptBin linkFarm;
+            inherit (final) python3Packages writeShellScriptBin symlinkJoin;
           };
         in
         {
@@ -130,11 +181,13 @@ assert any(b.slug == 'demo' for b in c.BOTS)
 
       nixosModules.briefs = import ./nix/module.nix;
 
-      overlays.briefs = final: prev: {
-        briefs = import ./nix/package.nix {
+      overlays.briefs = final: prev: let
+        briefsPackages = import ./nix/package.nix {
           inherit (final) lib;
-          inherit (final) python3Packages writeShellScriptBin linkFarm;
+          inherit (final) python3Packages writeShellScriptBin symlinkJoin;
         };
+      in {
+        briefs = briefsPackages.default;
       };
     };
 }

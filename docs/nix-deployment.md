@@ -11,9 +11,13 @@ nix build .#briefs
 
 Packages:
 
+The default package installs executables under **`$out/bin/`** (required by `services.briefs`):
+
+- `briefs-web`, `briefs-backup-db`, `notify-bot-vps`, `briefs-pack-app`
+
 | Output | Purpose |
 |--------|---------|
-| `.#briefs` | CLI wrappers, Python env, maintenance scripts |
+| `.#briefs` | `bin/` wrappers + maintenance scripts |
 | `.#briefs-web` | Uvicorn entrypoint |
 | `.#briefs-python` | Python package only |
 
@@ -69,7 +73,8 @@ Maintenance commands (on PATH via the `briefs` package):
       "::1"
       "vps-hub.example-tailnet.ts.net"
     ];
-    allowedLogins = [ "operator@example.test" ]; # from private config
+    # Private runtime TOML (outside the Nix store); module auth/bot options are ignored when set.
+    configFile = "/var/lib/briefs/config/briefs.toml";
     syncTokenFile = "/var/lib/briefs/secrets/sync-token";
     webhookEnvFile = "/var/lib/briefs/secrets/webhook.env";
     backup.enable = true;
