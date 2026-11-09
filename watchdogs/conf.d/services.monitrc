@@ -49,6 +49,4 @@ check process watchdog-guardian matching "watchdog-guardian"
     start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start guardian"
     stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop guardian"
 
-check program saner with path "/home/box/agent-data/shared/watchdogs/bin/wd-saner" with timeout 120 seconds
-    every 10 cycles
-    if status != 0 then alert
+# Saner retired 2026-11-07 after complete note export; no scheduled check.

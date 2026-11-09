@@ -38,7 +38,7 @@
     {% if owned %}<ul>
     {% for owner, rows in owned.items() %}<li><strong>{{ owner }}</strong>: {% for r in rows %}{{ r.sender }} ({{ r.emails }}){% if not loop.last %}, {% endif %}{% endfor %}</li>{% endfor %}
     </ul>{% else %}<p>None in this snapshot.</p>{% endif %}
-    <p class="cl-meta">Ownership, not sensitivity: Daycare, Friends, Radar, Pika, Chess and Family handle these, so they never appear in the sittings.</p>
+    <p class="cl-meta">Ownership, not sensitivity: Business, Friends, Radar, Pika, Chess and Family handle these, so they never appear in the sittings.</p>
   </section>
 
   <details class="cl-details">
@@ -46,7 +46,7 @@
     <ul>
     {% for k, v in ds.excluded.items() %}<li>{{ k }}: {{ v.emails }} emails / {{ v.senders }} senders</li>{% endfor %}
     </ul>
-    <p>Teammates (Daycare, Friends, Radar, Pika, Chess, Family) own their mail; Money stacks that are shown only offer Archive/Keep/Archive+Unsub.</p>
+    <p>Teammates (Business, Friends, Radar, Pika, Chess, Family) own their mail; Money stacks that are shown only offer Archive/Keep/Archive+Unsub.</p>
   </details>
 </div>
 <script nonce="{{ request.state.csp_nonce }}">

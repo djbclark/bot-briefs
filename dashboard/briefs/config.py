@@ -88,6 +88,20 @@ def _load_toml_config() -> None:
     if sources := paths.get("sources_dir"):
         _apply_env("BRIEFS_SOURCES_DIR", str(sources))
 
+    todo_review = data.get("todo_review") or {}
+    if isinstance(todo_review, dict):
+        owners = todo_review.get("owners")
+        if isinstance(owners, list) and owners:
+            _apply_env("BRIEFS_TODO_REVIEW_OWNERS", ",".join(str(o) for o in owners if str(o).strip()))
+        for tkey, env_key in (
+            ("account", "BRIEFS_TODO_REVIEW_ACCOUNT"),
+            ("export_dir", "BRIEFS_TODO_REVIEW_EXPORT_DIR"),
+            ("dataset", "BRIEFS_TODO_REVIEW_DATASET"),
+            ("threads", "BRIEFS_TODO_REVIEW_THREADS"),
+        ):
+            if val := todo_review.get(tkey):
+                _apply_env(env_key, str(val))
+
     bots = data.get("bots")
     if isinstance(bots, list) and bots:
         _TOML_BOTS = [b for b in bots if isinstance(b, dict)]

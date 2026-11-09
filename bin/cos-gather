@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """cos-gather: deterministic data gathering for Chief of Staff's 04:14 ET high-priority list.
 
-Read-only against the Bot Briefs DB (sqlite uri mode=ro). Optional opencli calls for
-Saner/Shortwave (read commands only). Writes only: stdout, -o FILE, and a snapshot under
+Read-only against the Bot Briefs DB (sqlite uri mode=ro).
+Retired Saner/Shortwave sources are not contacted. Writes only: stdout, -o FILE, and a snapshot under
 ~/.local/state/cos-gather/YYYY-MM-DD.json (skipped for --as-of / --no-state).
 See /home/box/src/one-offs/cos-gather/README.md.
 """
@@ -189,45 +189,10 @@ def run_opencli(args):
 
 
 def gather_external(sources, cands, today):
-    try:
-        health = json.load(open(HEALTH))
-    except (OSError, ValueError):
-        health = {}
-    specs = {"saner": ["saner", "tasks", "--status", "open"], "shortwave": ["shortwave", "todos"]}
-    for name, args in specs.items():
-        h = health.get(name, {})
-        hnote = f"health file: ok={h.get('ok')} last_run={h.get('last_run')} consecutive_failures={h.get('consecutive_failures')}"
-        if h.get("both_routes_failed"):
-            sources[name] = {"status": "skipped_unhealthy", "detail": hnote, "count": 0}
-            continue
-        rows, err = run_opencli(args)
-        if err:
-            sources[name] = {"status": "error", "detail": f"{err}; {hnote}", "count": 0}
-            continue
-        n = 0
-        for r in rows:
-            if not isinstance(r, dict):
-                continue
-            if name == "saner":
-                if r.get("done") in (True, "true", 1):
-                    continue
-                title = r.get("content") or ""
-                pr = r.get("priority")
-                pr = pr if isinstance(pr, int) else None
-                c = {"bot": "saner", "id": r.get("id"), "key": f"saner:{r.get('id')}", "title": title,
-                     "details": None, "links": [], "due": (str(r.get("due"))[:10] if r.get("due") else None),
-                     "priority": pr}
-            else:
-                title = r.get("title") or ""
-                link = r.get("link")
-                c = {"bot": "shortwave", "id": None, "key": f"shortwave:{link or title}", "title": title,
-                     "details": f"date={r.get('date')} count={r.get('count')}", "links": [{"label": "Shortwave", "url": link}] if link else [],
-                     "due": None, "priority": None}
-            if c["due"] and not re.match(r"\d{4}-\d\d-\d\d", c["due"]):
-                c["due"] = None
-            c.update({"first_seen": None, "last_seen": None, "flags": [], "source": name, "parent": None, "section": None})
-            cands.append(c); n += 1
-        sources[name] = {"status": "ok", "detail": hnote, "count": n}
+    # Saner retired after a verified full export on 2026-11-07.
+    # Shortwave is also retired. Kept TODOs remain on the local review dashboard.
+    for name in ("saner", "shortwave"):
+        sources[name] = {"status": "retired", "detail": "Archived locally; no live sync", "count": 0}
 
 
 def load_prev(conn, slugs, prev_cutoff, today):

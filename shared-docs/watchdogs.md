@@ -74,7 +74,7 @@ check process NAME matching "unique cmdline regex"
 
 ## Hermes quota watchdog (added 2026-10-24)
 After Hermes ran out of model quota at about 03:18 ET (cline2 DeepSeek Flash daily cap, then the xAI grok credits).
-- `~/.local/bin/change-hermes` → `/workspace/ade/bin/change-hermes` (repo <USER>/ade, master). Off macOS it runs itself on the Mac
+- `~/.local/bin/change-hermes` → `<site-config repo>/bin/change-hermes` (moved there from the <USER>/ade repo in November 2026). Off macOS it runs itself on the Mac
   over `ssh <mac-hermes-ssh-alias>` (`~/.ssh/config`, key `~/.ssh/<your_hermes_key_name>`, via tailscale SOCKS). On the Mac the key's authorized_keys line forces
   `bin/change-hermes-ssh-gate`, which allows only `--check`, `--list`, `--auto [--dry-run]`.
 - `--auto` order: cline2 DeepSeek Flash → cline Flash → cline2 Pro → cline Pro → cline2 kimi-k3 → glm-5.2 → minimax-m3 → qwen3.7-max → xai-oauth grok-4.7 (aiuse headroom ≥ 15%).
@@ -123,11 +123,15 @@ serve, or a URL outage with no one told, was not covered. New monit check `dashb
 5. Skips actions 04:58-05:10 ET. It never restarts tailscaled; wd-ts-health still does that (4 min, or 75 s with the long-poll signature).
 Log lines `[dashboard-url]` go to `watchdog.log`. Rollback: delete the `dashboard-url` block from `conf.d/services.monitrc` (backup `services.monitrc.bak-20261028`) and `monit -c ~/.config/monit/monitrc reload`.
 
-## wd-saner (added 2026-10-28, Coding)
+## wd-saner — RETIRED 2026-11-07
+
+Saner was retired after all indexed note bodies and tasks were exported to the box and to cloud storage. The monit Saner stanza was removed and wd-saner is now a no-op. No scheduled login polling, browser recovery or Saner notifications remain. The notes below are historical only; do not restore without a new request from the operator.
+
+### Historical setup (added 2026-10-28, Coding)
 
 Keeps `opencli saner ...` working on the box: starts its own dedicated Chrome (private display :300, see the private-display note below) if it is down, restarts the opencli daemon once if the Browser Bridge extension is not connected, and checks the Saner login every 30 min. Pings via `hermes-ping` immediately if Saner needs a sign-in, or after 20 min of any other problem, and once on recovery. Runs from monit every 10 cycles (~5 min). Env: `WD_SANER_NOTIFY=0`, `WD_SANER_NOTIFY_AFTER`, `WD_SANER_LOGIN_EVERY`, `WD_SANER_DISPLAY`. State: `~/.local/state/watchdogs/saner.{fail,acted,pinged,login-checked}`. The extension lives unpacked in `/workspace/opencli-ext/ext` (loaded in the Chrome profile); keep that folder.
 
-**Private display (2026-11-02).** The agent desktop display (:13) is platform-managed and gets recycled with agent desktops (killing its Chrome), and the old `pgrep` check matched any agent's Chrome. Now:
+**2026-11-02 change (private display).** The agent desktop display (:13) is platform-managed and gets recycled with agent desktops (killing its Chrome), and the old `pgrep` check matched any agent's Chrome. Now:
 - Private Xvfb `:300` (above the platform's display range, so no seat recycling or CDP discovery touches it), started by wd-saner itself when `xdpyinfo -display :300` fails, with X access control on (a private 0600 cookie in `~/.local/state/watchdogs/saner-xvfb.Xauthority`, `-auth`, no `-ac`, no TCP); pid in `~/.local/state/watchdogs/saner-xvfb.pid`, log `saner-xvfb.log`. A stale `/tmp/.X300-lock` is removed only if its pid is dead.
 - Profile `/home/box/chrome-profile/opencli-private`: a `cp -a` copy of the old box-chrome profile (holds the Saner + Shortwave logins and the Browser Bridge extension). The original profile is left unmodified; wd-saner keeps the new one at mode 0700. CDP (port 9335) listens on 127.0.0.1 only, which still lets any local account reach it, the same as the platform Chromes: don't give untrusted accounts a shell on the box.
 - Chrome is launched by `box-chrome` with `DISPLAY=:300 CHROME_USER_DATA_DIR=<profile> SAND_CHROME_REMOTE_DEBUG_PORT=9335` (same flags/proxy as the platform Chromes). Log `saner-chrome.log`.

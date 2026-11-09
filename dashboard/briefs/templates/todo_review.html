@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}TODO review · Bot Briefs{% endblock %}
+{% block content %}
+<div class="todo-review">
+  <h1>TODO review</h1>
+  <p>Local review only. Decisions here never change Saner, never archive originals and never dispatch to any bot. Export time: {{ exported_et }}.</p>
+  {% if export_incomplete %}<p role="alert"><strong>Warning: export is incomplete{% if missing_notes_count %} ({{ missing_notes_count }} notes missing){% endif %}.</strong> Rows below may be a subset.</p>{% endif %}
+  {% for w in warnings_list %}<p role="note">Export warning: {{ w }}</p>{% endfor %}
+  <form method="get" action="/todo-review" class="tr-filters" hx-get="/todo-review" hx-target="#todo-review-list" hx-push-url="true" hx-trigger="change, submit">
+    <label>Source <select name="source"><option value="">All</option>{% for s in distinct_sources %}<option value="{{ s }}" {% if s == filter_source %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+    <label>Owner <select name="owner"><option value="">All</option>{% for o in allowed_owners %}<option value="{{ o }}" {% if o == filter_owner %}selected{% endif %}>{{ o }}</option>{% endfor %}</select></label>
+    <label>Decision <select name="decision"><option value="">All</option><option value="undecided" {% if filter_decision == 'undecided' %}selected{% endif %}>Undecided</option>{% for k, v in decision_labels.items() %}<option value="{{ k }}" {% if k == filter_decision %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    <label>Status <select name="status"><option value="">All</option>{% for s in distinct_statuses %}<option value="{{ s }}" {% if s == filter_status %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+    <label>Sort <select name="sort">{% for k, v in sort_options %}<option value="{{ k }}" {% if k == filter_sort %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    <label>Search <input type="search" name="q" value="{{ filter_q }}"></label>
+    <button type="submit">Apply</button>
+  </form>
+  <div id="todo-review-list">{% include "partials/todo_review_list.html" %}</div>
+</div>
+{% endblock %}

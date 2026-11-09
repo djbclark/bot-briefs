@@ -202,6 +202,49 @@ def init_schema(conn: Optional[sqlite3.Connection] = None, db_path: Optional[str
         );
         """)
 
+        # Dedicated local-only TODO review tables (never mirrored or dispatched)
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS todo_review_items (
+            task_key TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            source TEXT NOT NULL,
+            source_status TEXT NOT NULL,
+            created_at TEXT NULL,
+            due_at TEXT NULL,
+            proposed_owner TEXT NOT NULL,
+            links_json TEXT NOT NULL DEFAULT '[]',
+            provenance_json TEXT NOT NULL DEFAULT '[]',
+            imported_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS todo_review_decisions (
+            task_key TEXT PRIMARY KEY,
+            decision TEXT NULL CHECK (decision IS NULL OR decision IN ('keep', 'done', 'drop', 'changed')),
+            note TEXT NOT NULL DEFAULT '',
+            assigned_owner TEXT NOT NULL,
+            reviewer TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS todo_review_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_key TEXT NOT NULL,
+            prev_decision TEXT NULL,
+            new_decision TEXT NULL,
+            prev_owner TEXT NULL,
+            new_owner TEXT NULL,
+            prev_note TEXT NULL,
+            new_note TEXT NULL,
+            reviewer TEXT NOT NULL,
+            audit_label TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_todo_review_audit_key ON todo_review_audit(task_key, id DESC);
+        """)
+
         # Seed bots
         for b in BOTS:
             conn.execute(

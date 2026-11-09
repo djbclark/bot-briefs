@@ -27,6 +27,12 @@ allowed_hosts = [
 [paths]
 # db = "/var/lib/briefs/data/briefs.db"
 
+# Optional local-only TODO review page (/todo-review). Decisions stay in local SQLite tables.
+# [todo_review]
+# owners = ["Chess", "Coding", "Money", "Family", "Radar", "Zero"]   # "Other" is always added
+# account = "user@example.com"            # default account for dodosend:// thread links
+# export_dir = "/var/lib/briefs/todo-review"  # holds todo-review-candidates.json (+ shortwave-thread-map.json)
+
 [[bots]]
 id = "00000000-0000-4000-8000-000000000001"
 slug = "chief-of-staff"

@@ -277,6 +277,9 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     from briefs import cleanup as _cleanup
     _cleanup.register(app, templates, common_context, _verify_csrf, get_db)
 
+    from briefs import todo_review as _todo_review
+    _todo_review.register(app, templates, common_context, _verify_csrf, get_db)
+
     def _render_item_row(conn: Any, item_id: int, request: Request) -> Response:
         it = conn.execute(
             """

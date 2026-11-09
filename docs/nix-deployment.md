@@ -50,10 +50,10 @@ Maintenance commands (on PATH via the `briefs` package):
 }
 ```
 
-### Minimal `vps-hub` integration (`site-djbclark`)
+### Minimal host integration (`<site-config repo>`)
 
 ```nix
-# nixos/vps-hub/configuration.nix (fragment — values from private site-private repo)
+# nixos/<host>/configuration.nix (fragment — values from your private config repo)
 {
   imports = [
     inputs.bot-briefs.nixosModules.briefs
@@ -66,12 +66,12 @@ Maintenance commands (on PATH via the `briefs` package):
   services.briefs = {
     enable = true;
     package = pkgs.briefs;
-    publicUrl = "https://vps-hub.example-tailnet.ts.net"; # from private config
+    publicUrl = "https://briefs-host.example-tailnet.ts.net"; # from private config
     allowedHosts = [
       "localhost"
       "127.0.0.1"
       "::1"
-      "vps-hub.example-tailnet.ts.net"
+      "briefs-host.example-tailnet.ts.net"
     ];
     # Private runtime TOML (outside the Nix store); module auth/bot options are ignored when set.
     configFile = "/var/lib/briefs/config/briefs.toml";
@@ -91,9 +91,9 @@ Maintenance commands (on PATH via the `briefs` package):
 
 Default `services.briefs.user = "root"` matches the transitional VPS layout: SQLite `600`, secrets directory `700`. Moving to an unprivileged user requires a coordinated `chown` of `/var/lib/briefs` — do not do that in the same change as the first Nix module deploy.
 
-## Safe hub deployment (coordinator)
+## Safe new-host deployment (coordinator)
 
-**Do not run on `vps-primary`.** On `vps-hub` only, after merging the PR and pinning the flake input:
+**Do not run on a host that already serves the dashboard another way.** On the new host only, after merging the PR and pinning the flake input:
 
 ```bash
 # 1. Stop transitional root-user units (avoid duplicate listeners on :8642)
@@ -103,9 +103,9 @@ sudo systemctl --user stop briefs-backup.timer
 sudo systemctl --user disable briefs-backup.timer
 # Leave briefs-wake-retry.timer disabled (should already be off).
 
-# 2. Rebuild from site-djbclark vps-hub branch with module enabled
-cd /path/to/site-djbclark
-sudo nixos-rebuild switch --flake .#vps-hub
+# 2. Rebuild from your site-config repo with the module enabled
+cd /path/to/site-config
+sudo nixos-rebuild switch --flake .#<host>
 
 # 3. Verify (no response bodies in shared logs)
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8642/healthz
