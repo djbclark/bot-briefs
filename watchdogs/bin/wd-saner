@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Saner retired 2026-11-07 after verified 743/743 export.
+# No login polling, browser launching, daemon restarts, or notifications.
+exit 0

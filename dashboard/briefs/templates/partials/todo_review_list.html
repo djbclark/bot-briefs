@@ -1,0 +1,4 @@
+<p id="todo-review-summary" class="tr-summary">{{ rows|length }} shown of {{ summary.total }} · decided {{ summary.decided }} (Keep {{ summary.keep }}, Done {{ summary.done }}, Drop {{ summary.drop }}, Changed {{ summary.changed }}) · undecided {{ summary.undecided }} · reassigned {{ summary.reassigned }}</p>
+<ul class="tr-rows" style="list-style:none;padding:0">
+{% for row in rows %}{% include "partials/todo_review_row.html" %}{% else %}<li>No matching rows.</li>{% endfor %}
+</ul>

@@ -1,0 +1,10 @@
+# Dual-run mirror of the Bot Briefs dashboard to the VPS copy (added 2026-10-31).
+# Daemon: python -m briefs.mirror run. State/lag: ~/.local/share/briefs-mirror/, /home/box/agent-data/shared/briefs-mirror/status.json.
+# Failure of the mirror never affects the box dashboard. Rollback: monit stop briefs-mirror; delete this file; monit reload.
+check process briefs-mirror matching "briefs.mirror run"
+    start program = "/home/box/agent-data/shared/watchdogs/bin/wd-svc start briefs-mirror" with timeout 20 seconds
+    stop program  = "/home/box/agent-data/shared/watchdogs/bin/wd-svc stop briefs-mirror"
+
+# status.json is rewritten every 5 min by the daemon; a stale file means the daemon is wedged (e.g. after a box freeze).
+check file briefs-mirror-status with path /home/box/agent-data/shared/briefs-mirror/status.json
+    if timestamp > 15 minutes then exec "/home/box/agent-data/shared/watchdogs/bin/wd-svc restart briefs-mirror"

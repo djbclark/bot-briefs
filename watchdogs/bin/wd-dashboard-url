@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# End-to-end check of the Bot Briefs dashboard's tailnet URL (added 2026-10-28, Coding).
+# Runs from monit every 2 cycles (~60 s). Exit 0 always (it fixes things itself; monit only needs it to run).
+#  - Local /healthz down: do nothing here (monit's `dashboard` check restarts uvicorn).
+#  - Local OK but https://grok-bot-box.../healthz (via tailscaled's SOCKS :1055) fails or doesn't say "ok":
+#      after WD_URL_REAPPLY_AFTER (60 s) re-apply the tailnet-only Serve mapping, once per episode (never Funnel).
+#      tailscaled restarts stay with wd-ts-health (its 4-min / 75-s rules); this script does not restart tailscaled.
+#      after WD_URL_NOTIFY_AFTER (20 min) of continuous failure: one hermes-ping; one more when it recovers.
+# Env: WD_URL_NOTIFY=0 disables pings. Skips actions 04:58-05:10 ET (daily home-network reboot).
+export PATH=/home/box/.local/bin:/usr/bin:/bin
+URL=https://grok-bot-box.<tailnet>.ts.net/healthz
+LOCAL=http://127.0.0.1:8642/healthz
+SOCK=/home/box/.local/share/tailscale/tailscaled.sock
+ST=/home/box/.local/state/watchdogs; LOG=$ST/watchdog.log; F=$ST/dashboard-url.fail; ACT=$ST/dashboard-url.acted; PING=$ST/dashboard-url.pinged
+mkdir -p "$ST"; log() { echo "$(date '+%F %T %Z') [dashboard-url] $*" >> "$LOG"; }
+now=$(date +%s); hm=$(TZ=America/New_York date +%H%M)
+body=$(curl -s -m 10 "$LOCAL"); [ "$body" = ok ] || exit 0          # dashboard itself down: monit's job
+r=$(curl -s -m 15 --socks5-hostname localhost:1055 "$URL"); code=$?
+if [ $code -eq 0 ] && [ "$r" = ok ]; then
+  if [ -f "$F" ]; then
+    d=$(( now - $(cat "$F") )); log "URL healthy again after ${d}s"
+    [ -f "$PING" ] && [ "${WD_URL_NOTIFY:-1}" != 0 ] && timeout 30 hermes-ping "dashboard URL is back after $((d/60)) min" >/dev/null 2>&1
+    rm -f "$F" "$ACT" "$PING"
+  fi
+  exit 0
+fi
+[ -f "$F" ] || { echo "$now" > "$F"; log "URL check failed (curl rc=$code, body='${r:0:20}'); local dashboard is fine"; }
+age=$(( now - $(cat "$F") ))
+{ [ "$hm" -ge 0458 ] && [ "$hm" -le 0510 ]; } && exit 0
+if [ "$age" -ge "${WD_URL_REAPPLY_AFTER:-60}" ] && [ ! -f "$ACT" ] && [ -S "$SOCK" ]; then
+  : > "$ACT"; log "failing ${age}s: re-applying serve https:443 -> 127.0.0.1:8642 (tailnet only)"
+  timeout 30 tailscale --socket="$SOCK" serve --bg --https=443 http://127.0.0.1:8642 >> "$LOG" 2>&1
+fi
+if [ "$age" -ge "${WD_URL_NOTIFY_AFTER:-1200}" ] && [ ! -f "$PING" ]; then
+  : > "$PING"; log "failing ${age}s: notifying"
+  [ "${WD_URL_NOTIFY:-1}" != 0 ] && timeout 30 hermes-ping "dashboard URL has been down $((age/60)) min (local server is fine; tailscale side)" >/dev/null 2>&1
+fi
+exit 0

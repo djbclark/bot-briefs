@@ -1,0 +1,59 @@
+{% if in_progress %}
+<div id="in-progress"
+     hx-get="/in-progress"
+     hx-trigger="every 15s, inprogressChanged from:body"
+     hx-swap="outerHTML"
+     class="in-progress-card">
+  <div class="in-prog-header">
+    <span class="in-prog-heading">In progress ({{ in_progress|length }})</span>
+  </div>
+  <div class="in-prog-list">
+    {% for entry in in_progress %}
+      <div class="in-prog-row" data-item-id="{{ entry.item.id }}" id="in-prog-row-{{ entry.item.id }}">
+        <div class="in-prog-info">
+          <div class="in-prog-title-line">
+            <a href="/i/{{ entry.item.id }}" class="in-prog-title">#{{ entry.item.display_id or entry.item.id }} {{ entry.item.title }}</a>
+            <span class="badge badge-bot">{{ entry.item.bot_name }}</span>
+            <span class="badge badge-status badge-{{ entry.latest_action.status }}">{{ entry.latest_action.status }}</span>
+          </div>
+
+          <div class="in-prog-text">
+            <span class="in-prog-speaker">User:</span> {{ entry.latest_action.text }}
+          </div>
+
+          {% if entry.latest_action.bot_note %}
+            <div class="in-prog-bot-note">
+              <span class="in-prog-speaker">{% if entry.latest_action.status == 'discuss' %}Bot asks:{% else %}Bot note:{% endif %}</span>
+              {{ entry.latest_action.bot_note }}
+            </div>
+          {% endif %}
+
+          {% if entry.earlier_actions %}
+            <details class="in-prog-earlier">
+              <summary class="earlier-summary">earlier ({{ entry.earlier_actions|length }})</summary>
+              <div class="earlier-list">
+                {% for prev in entry.earlier_actions %}
+                  <div class="earlier-item">
+                    <div><span class="in-prog-speaker">User:</span> {{ prev.text }}</div>
+                    {% if prev.bot_note %}
+                      <div><span class="in-prog-speaker">Bot:</span> {{ prev.bot_note }}</div>
+                    {% endif %}
+                    <div class="earlier-meta">{{ prev.status }} · {{ prev.created_at[:16].replace('T', ' ') }}</div>
+                  </div>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
+        </div>
+
+        <div class="in-prog-actions">
+          <textarea name="text" rows="1" class="reply-input" placeholder="Reply…" data-item-id="{{ entry.item.id }}"></textarea>
+          <button type="button" class="btn btn-sm btn-send" hx-post="/i/{{ entry.item.id }}/send" hx-include="#in-prog-row-{{ entry.item.id }} textarea" hx-target="#in-prog-row-{{ entry.item.id }}" hx-swap="outerHTML">Send</button>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div id="in-progress" hx-get="/in-progress" hx-trigger="inprogressChanged from:body" hx-swap="outerHTML"></div>
+{% endif %}

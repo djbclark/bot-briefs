@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /home/box/.local/opt/node22/bin/node /home/box/.local/opt/raacp/lib/node_modules/@simonepri/refined-antigravity-acp/dist/bin/cli.js "$@"

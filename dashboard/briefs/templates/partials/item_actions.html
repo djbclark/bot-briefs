@@ -1,0 +1,173 @@
+<div class="item-action-panel" id="item-action-panel-{{ item.id }}" style="margin-top: 10px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%;">
+  <!-- Status and Priority header -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 6px;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Status:</span>
+      {% if item.snooze_until and item.snooze_until > today %}
+        <span class="badge" style="background-color: var(--amber-light); color: var(--amber-text);">snoozed until {{ item.snooze_until }}</span>
+      {% elif item.status == 'done' %}
+        <span class="badge" style="background-color: var(--green-light); color: var(--green-text);">done</span>
+      {% elif item.status == 'dismissed' %}
+        <span class="badge" style="background-color: var(--surface-alt); color: var(--text-muted);">dismissed</span>
+      {% elif item.status == 'resolved' %}
+        <span class="badge badge-resolved">resolved</span>
+      {% else %}
+        <span class="badge badge-new">{{ item.status }}</span>
+      {% endif %}
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Priority:</span>
+      <span class="badge" style="background-color: var(--surface-alt);">P{{ item.priority or 3 }}</span>
+    </div>
+  </div>
+
+  <!-- Action Buttons Row -->
+  <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+    {% if from_row %}
+      <!-- Done button (from row) -->
+      <form hx-post="/i/{{ item.id }}/action" hx-target="closest .item-row" hx-swap="outerHTML" style="margin: 0;">
+        <input type="hidden" name="type" value="done">
+        <input type="hidden" name="from_row" value="1">
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem; background-color: var(--green-light); color: var(--green-text); border-color: var(--green);">Done ✓</button>
+      </form>
+
+      <!-- Dismiss button (from row) -->
+      <form hx-post="/i/{{ item.id }}/action" hx-target="closest .item-row" hx-swap="outerHTML" style="margin: 0;">
+        <input type="hidden" name="type" value="dismiss">
+        <input type="hidden" name="from_row" value="1">
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem;">Dismiss</button>
+      </form>
+    {% else %}
+      <!-- Done button (standalone) -->
+      <form hx-post="/i/{{ item.id }}/action" hx-target="#item-action-panel-{{ item.id }}" hx-swap="outerHTML" style="margin: 0;">
+        <input type="hidden" name="type" value="done">
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem; background-color: var(--green-light); color: var(--green-text); border-color: var(--green);">Done ✓</button>
+      </form>
+
+      <!-- Dismiss button (standalone) -->
+      <form hx-post="/i/{{ item.id }}/action" hx-target="#item-action-panel-{{ item.id }}" hx-swap="outerHTML" style="margin: 0;">
+        <input type="hidden" name="type" value="dismiss">
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem;">Dismiss</button>
+      </form>
+    {% endif %}
+
+    <!-- Reopen button if not open -->
+    {% if item.status in ('done', 'dismissed') or (item.snooze_until and item.snooze_until > today) %}
+      <form hx-post="/i/{{ item.id }}/action" hx-target="{% if from_row %}closest .item-row{% else %}#item-action-panel-{{ item.id }}{% endif %}" hx-swap="outerHTML" style="margin: 0;">
+        <input type="hidden" name="type" value="reopen">
+        {% if from_row %}<input type="hidden" name="from_row" value="1">{% endif %}
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem; background-color: var(--accent-light); color: var(--accent-text);">Reopen</button>
+      </form>
+    {% endif %}
+
+    <!-- Priority up -->
+    <form hx-post="/i/{{ item.id }}/action" hx-target="#item-action-panel-{{ item.id }}" hx-swap="outerHTML" style="margin: 0;">
+      <input type="hidden" name="type" value="priority">
+      <input type="hidden" name="delta" value="-1">
+      {% if from_row %}<input type="hidden" name="from_row" value="1">{% endif %}
+      <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem;" title="More important">Priority ↑</button>
+    </form>
+
+    <!-- Priority down -->
+    <form hx-post="/i/{{ item.id }}/action" hx-target="#item-action-panel-{{ item.id }}" hx-swap="outerHTML" style="margin: 0;">
+      <input type="hidden" name="type" value="priority">
+      <input type="hidden" name="delta" value="1">
+      {% if from_row %}<input type="hidden" name="from_row" value="1">{% endif %}
+      <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem;" title="Less important">Priority ↓</button>
+    </form>
+  </div>
+
+  <!-- Snooze Options -->
+  <div style="margin-bottom: 12px; padding: 8px; background: var(--surface-alt); border-radius: var(--radius);">
+    <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Snooze Until:</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+      <!-- Quick Snooze 1d -->
+      <form hx-post="/i/{{ item.id }}/action" hx-target="{% if from_row %}closest .item-row{% else %}#item-action-panel-{{ item.id }}{% endif %}" hx-swap="outerHTML" style="margin: 0;">
+        <input type="hidden" name="type" value="snooze">
+        <input type="hidden" name="until" value="1d">
+        {% if from_row %}<input type="hidden" name="from_row" value="1">{% endif %}
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem;">1d</button>
+      </form>
+      <!-- Quick Snooze 3d -->
+      <form hx-post="/i/{{ item.id }}/action" hx-target="{% if from_row %}closest .item-row{% else %}#item-action-panel-{{ item.id }}{% endif %}" hx-swap="outerHTML" style="margin: 0;">
+        <input type="hidden" name="type" value="snooze">
+        <input type="hidden" name="until" value="3d">
+        {% if from_row %}<input type="hidden" name="from_row" value="1">{% endif %}
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem;">3d</button>
+      </form>
+      <!-- Quick Snooze 1w -->
+      <form hx-post="/i/{{ item.id }}/action" hx-target="{% if from_row %}closest .item-row{% else %}#item-action-panel-{{ item.id }}{% endif %}" hx-swap="outerHTML" style="margin: 0;">
+        <input type="hidden" name="type" value="snooze">
+        <input type="hidden" name="until" value="1w">
+        {% if from_row %}<input type="hidden" name="from_row" value="1">{% endif %}
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem;">1w</button>
+      </form>
+      <!-- Date input snooze -->
+      <form hx-post="/i/{{ item.id }}/action" hx-target="{% if from_row %}closest .item-row{% else %}#item-action-panel-{{ item.id }}{% endif %}" hx-swap="outerHTML" style="display: flex; gap: 4px; align-items: center; margin: 0;">
+        <input type="hidden" name="type" value="snooze">
+        {% if from_row %}<input type="hidden" name="from_row" value="1">{% endif %}
+        <input type="date" name="until" required style="min-height: 40px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 0.85rem;">
+        <button type="submit" class="btn" style="min-height: 40px; min-width: 40px; font-size: 0.85rem;">Snooze</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reply / Instructions Form -->
+  <form hx-post="/i/{{ item.id }}/action" hx-target="#item-action-panel-{{ item.id }}" hx-swap="outerHTML" style="margin-bottom: 12px;">
+    <input type="hidden" name="type" value="reply">
+    {% if from_row %}<input type="hidden" name="from_row" value="1">{% endif %}
+    <div style="margin-bottom: 6px;">
+      <textarea name="text" placeholder="Reply or instruction for bot..." maxlength="4000" required style="width: 100%; min-height: 60px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font-family: inherit; font-size: 0.85rem; box-sizing: border-box;"></textarea>
+    </div>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <span style="color: var(--text-muted); font-size: 0.8rem;">Send = process now{% if not wake_available %} (picked up on the bots' next runs until the processing trigger is configured){% endif %}; Queue = save for "Submit all".</span>
+      <div style="display: flex; gap: 6px;">
+        <button type="submit" name="mode" value="queue" class="btn" style="min-height: 40px; padding: 0 16px; font-size: 0.85rem;">Queue</button>
+        <button type="submit" name="mode" value="send" class="btn" style="min-height: 40px; padding: 0 16px; font-size: 0.85rem; font-weight: 600;">Send</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- Action History -->
+  {% if actions %}
+    <div class="action-history" style="border-top: 1px solid var(--border); padding-top: 10px;">
+      <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">Action History</div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        {% for act in actions %}
+          <div style="font-size: 0.85rem; background: var(--surface-alt); padding: 6px 10px; border-radius: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px;">
+              <div>
+                <strong>{{ act.type }}</strong>
+                {% if act.type == 'snooze' and act.payload.until %}
+                  <span>until {{ act.payload.until }}</span>
+                {% elif act.type == 'priority' and act.payload.delta is defined %}
+                  <span>({{ '↑ more important' if act.payload.delta < 0 else '↓ less important' }})</span>
+                {% elif act.type == 'reply' and act.payload.text %}
+                  <span style="color: var(--text-muted);">"{{ act.payload.text|truncate(50) }}"</span>
+                {% endif %}
+              </div>
+              <span style="color: var(--text-muted); font-size: 0.75rem;">{{ act.created_at[:16].replace('T', ' ') }} ET</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 0.75rem; flex-wrap: wrap;">
+              <span class="badge badge-{{ act.status }}">{{ act.status }}</span>
+              {% if act.wake_requested %}
+                <span style="color: var(--text-muted);">
+                  {% if act.wake_status == 'sent' %}
+                    woke bot
+                  {% elif 'failed' in act.wake_status %}
+                    wake failed
+                  {% else %}
+                    will be picked up next run
+                  {% endif %}
+                </span>
+              {% endif %}
+              {% if act.bot_note %}
+                <span style="color: var(--text);">Bot note: {{ act.bot_note }}</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</div>

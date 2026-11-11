@@ -1,0 +1,5 @@
+# Hermes quota watchdog: every 30 cycles (15 min). The script does the fix itself
+# (change-hermes --auto with backoff); status != 0 means a human should look.
+check program hermes-quota with path "/home/box/agent-data/shared/watchdogs/bin/wd-hermes" with timeout 1200 seconds
+    every 30 cycles
+    if status != 0 then alert

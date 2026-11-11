@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# box version of ade tea-forgejo: env login only, nothing written to ~/.config/tea
+set -uo pipefail; . "/home/box/.local/share/forgejo-box/scripts/_env"
+export GITEA_INSTANCE_URL="https://$HOST" GITEA_TOKEN="${!VAR}"; exec tea "$@"

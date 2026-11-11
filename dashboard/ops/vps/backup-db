@@ -1,0 +1,22 @@
+#!/var/lib/briefs/venv/bin/python
+"""Nightly consistent SQLite backup of the VPS dashboard DB (online backup API). Keeps the newest 7.
+Output: /var/lib/briefs/backups/briefs-YYYYMMDD-HHMMSS.db  (the box's nightly Drive backup can include this directory)."""
+import glob, os, sqlite3, sys
+from datetime import datetime, timezone
+
+BASE = os.environ.get("BRIEFS_VPS_HOME", "/var/lib/briefs")
+DB = os.environ.get("BRIEFS_DB", f"{BASE}/data/briefs.db")
+OUT = os.environ.get("BRIEFS_BACKUP_DIR", f"{BASE}/backups")
+KEEP = int(os.environ.get("BRIEFS_BACKUP_KEEP", "7"))
+os.makedirs(OUT, mode=0o700, exist_ok=True)
+dest = f"{OUT}/briefs-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.db"
+src = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=30)
+dst = sqlite3.connect(dest)
+src.backup(dst)
+ok = dst.execute("PRAGMA integrity_check").fetchone()[0]
+dst.close(); src.close(); os.chmod(dest, 0o600)
+if ok != "ok":
+    os.unlink(dest); print("integrity check failed", file=sys.stderr); sys.exit(1)
+for old in sorted(glob.glob(f"{OUT}/briefs-*.db"))[:-KEEP]:
+    os.unlink(old)
+print("backup", dest)

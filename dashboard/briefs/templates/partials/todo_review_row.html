@@ -1,0 +1,18 @@
+{% if include_oob_summary %}<p id="todo-review-summary" hx-swap-oob="true" class="tr-summary">{{ summary.total }} total · decided {{ summary.decided }} (Keep {{ summary.keep }}, Done {{ summary.done }}, Drop {{ summary.drop }}, Changed {{ summary.changed }}) · undecided {{ summary.undecided }} · reassigned {{ summary.reassigned }}</p>{% endif %}
+<li class="tr-row" id="tr-{{ row.dom_id }}" data-key="{{ row.task_key }}" data-decision="{{ row.decision or '' }}" style="border-top:1px solid #8885;padding:.6em 0">
+  <div><strong>{{ row.title }}</strong> <span class="badge">{{ row.decision_label }}</span>{% if just_saved %} <em>saved</em>{% elif was_noop %} <em>no change</em>{% endif %}</div>
+  <div>
+    Source: {{ row.source }} · Status: {{ row.source_status }} · Created: {{ row.created_et }} · Due: {{ row.due_et }} · Age: {{ row.age_display }}
+    · Owner: {{ row.effective_owner }}{% if row.owner_reassigned %} (proposed {{ row.proposed_owner }}){% endif %}
+  </div>
+  {% if row.provenance_badges %}<div>Provenance: {% for b in row.provenance_badges %}<code>{{ b }}</code> {% endfor %}</div>{% endif %}
+  {% if row.links %}<div>{% for lk in row.links %}<a href="{{ lk.url|todo_safe_url }}" rel="noopener noreferrer" target="_blank">{{ lk.label or lk.url }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+  <form hx-post="/todo-review/decide" hx-target="#tr-{{ row.dom_id }}" hx-swap="outerHTML">
+    <input type="hidden" name="task_key" value="{{ row.task_key }}">
+    <select name="owner" aria-label="Owner">{% for o in allowed_owners %}<option value="{{ o }}" {% if o == row.effective_owner %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+    <input type="text" name="note" value="{{ row.note }}" maxlength="4000" placeholder="Note (for Changed)" aria-label="Note">
+    {% for k, v in decision_labels.items() %}<button type="submit" name="decision" value="{{ k }}" {% if row.decision == k %}aria-pressed="true" style="font-weight:bold"{% endif %}>{{ v }}</button> {% endfor %}
+    <button type="submit" name="decision" value="__keep_current__">Save owner/note</button>
+  </form>
+  {% if row.audit_count %}<small>{{ row.audit_count }} audit entr{{ 'y' if row.audit_count == 1 else 'ies' }}{% if row.decision_updated_et %}, last {{ row.decision_updated_et }}{% endif %}{% if row.reviewer %} by {{ row.reviewer }}{% endif %}</small>{% endif %}
+</li>

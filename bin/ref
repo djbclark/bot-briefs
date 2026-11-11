@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+# Usage: ref <BOT>  -> prints next Ref, e.g. "Ref: CHIEF-2s". One GLOBAL counter shared by all bots, base 36 (0-9a-z), never reset,
+# so the X part is unique across every bot and cross-references are unambiguous.
+import sys, os, fcntl
+bot = sys.argv[1].upper().replace(" ", "").replace("-", "") if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else sys.exit("usage: ref <BOT>   (prints next global base-36 Ref line)")
+d = "/home/box/agent-data/shared/refs"; os.makedirs(d, exist_ok=True)
+p = f"{d}/GLOBAL.count"; log = f"{d}/issued.log"
+with open(d + "/.lock", "a") as lk:
+    fcntl.flock(lk, fcntl.LOCK_EX)
+    n = int(open(p).read().strip()) if os.path.exists(p) else 0
+    n += 1
+    open(p, "w").write(str(n))
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    s = ""; m = n
+    while m: s = digits[m % 36] + s; m //= 36
+    open(log, "a").write(f"{s}\t{bot}\n")
+print(f"Ref: {bot}-{s}")

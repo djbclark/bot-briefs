@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Tiny loop that restarts monit if it dies (monit in turn watches this guardian). Single instance via flock.
+exec 9>/home/box/.local/state/watchdogs/guardian.lock; flock -n 9 || exit 0
+RC=/home/box/.config/monit/monitrc; LOG=/home/box/.local/state/watchdogs/watchdog.log
+while true; do
+  if ! monit -c $RC status >/dev/null 2>&1; then
+    echo "$(date '+%F %T %Z') [monit] not running; starting (guardian)" >> $LOG
+    monit -c $RC 9>&- >/dev/null 2>&1
+  fi
+  sleep 60 9>&-
+done

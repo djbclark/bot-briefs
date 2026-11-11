@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Inbox cleanup · Bot Briefs{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/cleanup.css">{% endblock %}
+{% block content %}
+<div class="cl-page" id="cl-index" data-dataset="{{ ds.dataset_id }}">
+  <h1 class="cl-h1">Inbox cleanup review</h1>
+  <p class="cl-lead">{{ ds.counts.candidates }} bulk emails from {{ ds.counts.stacks }} senders, split into {{ chunks|length }} sittings of about 10 minutes (~{{ total_minutes }} min total). Nothing happens in Gmail until Zero runs your plan: <strong>Archive runs first</strong>; Kill, Delete and Unsubscribe wait for a separate confirmation that shows counts. Delete = Trash (30-day recoverable). Archive does not mark mail read.</p>
+  <p class="cl-meta">Snapshot {{ ds.dataset_id }} · built {{ generated_et }}</p>
+
+  <h2 class="cl-h2">Sittings</h2>
+  <ol class="cl-chunks">
+  {% for c in chunks %}
+    <li class="cl-chunk-row" data-slug="{{ c.slug }}" data-stacks="{{ c.stacks|length }}">
+      <a href="/cleanup/{{ c.slug }}" class="cl-chunk-link">{{ c.title }}</a>
+      <span class="cl-chunk-facts">{{ c.emails }} emails · {{ c.stacks|length }} senders · ~{{ c.minutes|round(1) }} min</span>
+      <span class="cl-chunk-status" aria-live="polite">Not started</span>
+    </li>
+  {% endfor %}
+  </ol>
+
+  <details class="cl-details">
+    <summary>The 18 daily auto-archive rules (shown, never run from here)</summary>
+    <p>Zero's <code>sender-rules.json</code> has 18 <code>alwaysArchive</code> rules. Each is a Gmail search; mail matching it is archived (not deleted, not marked read) on Zero's daily run. In these pages a sender whose every email matches a rule is greyed out as “already covered by rule X” and offers <em>Leave to rule</em> instead of Archive, so you only decide exceptions (Keep, or stronger actions like Kill/Unsub). Counts are emails in today's snapshot; matching is approximate because Gmail also searches the body.</p>
+    <table class="cl-table">
+      <thead><tr><th scope="col">Rule</th><th scope="col">What it archives</th><th scope="col">Now</th></tr></thead>
+      <tbody>
+      {% for r in ds.rules %}
+        <tr><td><code>{{ r.id }}</code></td><td>{{ rule_help.get(r.id, r.description) }}<br><code class="cl-q">{{ r.query }}</code></td><td>{{ r.emails_now }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+
+  {% if ds.counts.get("sensitive") %}<p class="cl-meta">Includes {{ ds.counts.get("sensitive") }} sensitive emails (bank/tax/legal/e-sign/2FA/medical/VIP), tagged <span class="cl-badge sensitive">Sensitive</span> and defaulted to Keep; you can choose any action.</p>{% endif %}
+
+  <section class="cl-owned" id="cl-owned">
+    <h2 class="cl-h2">Excluded because another bot owns it ({{ ds.counts.get("teammate_owned", 0) }} emails)</h2>
+    {% if owned %}<ul>
+    {% for owner, rows in owned.items() %}<li><strong>{{ owner }}</strong>: {% for r in rows %}{{ r.sender }} ({{ r.emails }}){% if not loop.last %}, {% endif %}{% endfor %}</li>{% endfor %}
+    </ul>{% else %}<p>None in this snapshot.</p>{% endif %}
+    <p class="cl-meta">Ownership, not sensitivity: Business, Friends, Radar, Pika, Chess and Family handle these, so they never appear in the sittings.</p>
+  </section>
+
+  <details class="cl-details">
+    <summary>Never shown here ({{ ds.counts.excluded }} emails)</summary>
+    <ul>
+    {% for k, v in ds.excluded.items() %}<li>{{ k }}: {{ v.emails }} emails / {{ v.senders }} senders</li>{% endfor %}
+    </ul>
+    <p>Teammates (Business, Friends, Radar, Pika, Chess, Family) own their mail; Money stacks that are shown only offer Archive/Keep/Archive+Unsub.</p>
+  </details>
+</div>
+<script nonce="{{ request.state.csp_nonce }}">
+(function(){
+  var ds = document.getElementById("cl-index").dataset.dataset;
+  document.querySelectorAll(".cl-chunk-row").forEach(function(li){
+    var st = null; try { st = JSON.parse(localStorage.getItem("cleanup:" + ds + ":" + li.dataset.slug) || "null"); } catch(e) {}
+    var el = li.querySelector(".cl-chunk-status");
+    if (!st) return;
+    var total = parseInt(li.dataset.stacks, 10), done = Object.keys(st.reviewed || {}).length;
+    if (st.submitted) { el.textContent = "Submitted ✓"; li.classList.add("is-done"); }
+    else if (done) { el.textContent = done + " / " + total + " decided — resume"; li.classList.add("is-started"); }
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# notify-bot: send a message to one of the operator's Grok Bot bots (wakes it via its webhook routine).
+# Usage: notify-bot <botname> [-f FROM] [-m MODEL] [-s SUBJECT] [-r] [-n] "message text"
+#        notify-bot --list        bot names from ~/.config/agent-webhook/bots.json and configured yes/no
+#   -r  reply wanted (the bot answers by starting a new ACP turn in your cwd)
+#   -n  dry run: validate and print the payload (no secrets), do not send
+# Env (box secrets, never print them): AGENT_WEBHOOK_<BOT>_URL, AGENT_WEBHOOK_<BOT>_KEY,
+#   optional AGENT_WEBHOOK_<BOT>_HEADER (BOT = name uppercased, - -> _).
+#   Also read from $HOME/.config/agent-webhook/secrets.env (see above) if present.
+#   project-bot only: falls back to unsuffixed AGENT_WEBHOOK_URL/_KEY/_HEADER.
+set -euo pipefail
+REG="${AGENT_WEBHOOK_REGISTRY:-$HOME/.config/agent-webhook/bots.json}"
+# Optional secrets file (chmod 600, never print): KEY=VALUE lines for AGENT_WEBHOOK_* vars. Values already in the
+# environment win. Lets long-running processes (the dashboard server) pick up new webhooks without a restart.
+ENVF="${AGENT_WEBHOOK_ENV_FILE:-$HOME/.config/agent-webhook/secrets.env}"
+if [[ -r $ENVF ]]; then
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line =~ ^[[:space:]]*(export[[:space:]]+)?(AGENT_WEBHOOK_[A-Z0-9_]+)=(.*)$ ]] || continue
+    k=${BASH_REMATCH[2]}; v=${BASH_REMATCH[3]}
+    if [[ $v =~ ^\"(.*)\"$ || $v =~ ^\'(.*)\'$ ]]; then v=${BASH_REMATCH[1]}; fi
+    [[ -n $v && -z ${!k:-} ]] && export "$k=$v"
+  done < "$ENVF"
+fi
+usage(){ sed -n 2,9p "$0"; }
+bots(){ python3 -c 'import json,sys;print("\n".join(json.load(open(sys.argv[1]))["bots"]))' "$REG"; }
+var(){ local n="$1" s="$2" v="AGENT_WEBHOOK_${1}_$2"; if [[ -n "${!v:-}" ]]; then echo "$v"; return; fi
+  if [[ $FALLBACK == 1 ]]; then v="AGENT_WEBHOOK_$s"; [[ -n "${!v:-}" ]] && echo "$v"; fi; return 0; }
+[[ $# -ge 1 ]] || { usage; exit 2; }
+case "$1" in
+  -h|--help) usage; exit 0;;
+  --list) for b in $(bots); do U=$(tr a-z- A-Z_ <<<"$b"); FALLBACK=0; [[ $b == project-bot ]] && FALLBACK=1
+            [[ -n $(var "$U" URL) && -n $(var "$U" KEY) ]] && c=yes || c=no; echo "$b configured=$c"; done; exit 0;;
+esac
+BOTNAME="$1"; shift
+bots | grep -qxF "$BOTNAME" || { echo "notify-bot: unknown bot '$BOTNAME' (see notify-bot --list)" >&2; exit 2; }
+U=$(tr a-z- A-Z_ <<<"$BOTNAME"); FALLBACK=0; [[ $BOTNAME == project-bot ]] && FALLBACK=1
+FROM="${NOTIFY_FROM:-unknown-agent}"; MODEL="${NOTIFY_MODEL:-}"; SUBJECT=""; REPLY=false; DRY=0
+while getopts "f:m:s:rnh" o; do case $o in f) FROM=$OPTARG;; m) MODEL=$OPTARG;; s) SUBJECT=$OPTARG;; r) REPLY=true;; n) DRY=1;; h) usage; exit 0;; *) usage; exit 2;; esac; done
+shift $((OPTIND-1)); MSG="${*:-$(cat)}"
+BODY=$(TO="$BOTNAME" FROM="$FROM" MODEL="$MODEL" SUBJECT="$SUBJECT" MSG="$MSG" REPLY="$REPLY" python3 -c '
+import json,os,datetime
+print(json.dumps({"to":os.environ["TO"],"from":os.environ["FROM"],"model":os.environ["MODEL"],"subject":os.environ["SUBJECT"],
+"message":os.environ["MSG"],"reply_wanted":os.environ["REPLY"]=="true","cwd":os.getcwd(),
+"sent_at":datetime.datetime.now().astimezone().isoformat(timespec="seconds")}))')
+UV=$(var "$U" URL); KV=$(var "$U" KEY); HV=$(var "$U" HEADER)
+if [[ $DRY == 1 ]]; then echo "$BODY"; echo "dry-run: url=${UV:-MISSING} key=${KV:-MISSING} header=${HV:-default Bearer} (var names only)"; [[ -n $UV && -n $KV ]]; exit; fi
+[[ -n $UV ]] || { echo "notify-bot: AGENT_WEBHOOK_${U}_URL not set" >&2; exit 3; }
+[[ -n $KV ]] || { echo "notify-bot: AGENT_WEBHOOK_${U}_KEY not set" >&2; exit 3; }
+HDR="Authorization: Bearer ${!KV}"; [[ -n $HV ]] && HDR="${!HV}"
+# URL and auth header go to curl via --config on stdin, never argv (/proc/*/cmdline is world-readable).
+cfg_q() { local s=${1//\\/\\\\}; printf '"%s"' "${s//\"/\\\"}"; }
+T=$(mktemp); code=$(printf 'url = %s\nheader = %s\n' "$(cfg_q "${!UV}")" "$(cfg_q "$HDR")" |
+  curl -sS -K - -o "$T" -w '%{http_code}' -X POST -H "Content-Type: application/json" --data "$BODY") || true
+cat "$T" 2>/dev/null; rm -f "$T"; echo; echo "HTTP $code"
+[[ $code == 2* ]]

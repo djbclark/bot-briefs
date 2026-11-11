@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Open in Dodosend</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      background: #f6f5f1;
+      color: #1b1b18;
+    }
+    main {
+      max-width: 36rem;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin: 0 0 0.75rem;
+    }
+    p { margin: 0 0 1rem; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 1.25rem;
+    }
+    a { color: #0b57d0; }
+  </style>
+</head>
+<body>
+  <main>
+    <p id="usage" hidden>Open a Dodosend thread with <code>/t/&lt;threadId&gt;?account=&lt;email&gt;</code>. The account is optional. <a href="https://github.com/djbclark/bot-briefs/tree/main/dodo-link">Source on GitHub</a>.</p>
+    <div id="result" hidden></div>
+  </main>
+  <script>
+    (function () {
+      var THREAD_RE = /^[0-9a-f]{12,16}$/i;
+      var usage = document.getElementById("usage");
+      var result = document.getElementById("result");
+      var path = location.pathname.replace(/\/+$/, "") || "/";
+
+      function esc(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+
+      if (path === "/") {
+        usage.hidden = false;
+        return;
+      }
+
+      result.hidden = false;
+      var match = path.match(/^\/t\/([^/]+)$/);
+      var id = match ? decodeURIComponent(match[1]) : "";
+
+      if (!match || !THREAD_RE.test(id)) {
+        document.title = "Invalid Dodosend link";
+        result.innerHTML = "<h1>Invalid thread link</h1><p>A Dodosend thread id is 12 to 16 hexadecimal characters.</p>";
+        return;
+      }
+
+      var account = new URLSearchParams(location.search).get("account");
+      if (account) account = account.trim();
+      var dodo = "dodosend://thread/" + id;
+      if (account) dodo += "?account=" + account;
+
+      var gmailUser = account || "0";
+      var gmail = "https://mail.google.com/mail/u/" + encodeURIComponent(gmailUser) + "/#all/" + id;
+
+      result.innerHTML =
+        "<h1>Opening in Dodosend…</h1>" +
+        "<p class=\"links\">" +
+        "<a id=\"open-dodosend\" href=\"" + esc(dodo) + "\">Open in Dodosend</a>" +
+        "<a id=\"open-gmail\" href=\"" + esc(gmail) + "\">Open in Gmail</a>" +
+        "</p>";
+
+      window.location = dodo;
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+[Unit]
+Description=Nightly SQLite backup of the VPS dashboard DB
+
+[Service]
+Type=oneshot
+ExecStart=/var/lib/briefs/venv/bin/python /var/lib/briefs/app/ops/vps/backup-db

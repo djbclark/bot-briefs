@@ -1,0 +1,50 @@
+# Neutral example runtime configuration for Bot Briefs (no secrets).
+# Copy to a host path outside the Nix store (e.g. /var/lib/briefs/config/briefs.toml)
+# and set BRIEFS_CONFIG_FILE to that path.
+#
+# Secret files (webhook env, sync token) are referenced only by path via environment
+# variables or the NixOS module — never embed tokens here.
+
+[server]
+port = 8642
+public_url = "https://briefs.example-tailnet.ts.net"
+# timezone = "America/New_York"
+
+[auth]
+# Fail closed: leave allowed_logins empty in public examples; set on the host.
+allowed_logins = []
+allowed_hosts = [
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "briefs.example-tailnet.ts.net",
+]
+
+# Optional UUID overrides per bot slug (real values live in private config only).
+# [auth.bot_ids]
+# chief-of-staff = "00000000-0000-4000-8000-000000000001"
+
+[paths]
+# db = "/var/lib/briefs/data/briefs.db"
+
+# Optional local-only TODO review page (/todo-review). Decisions stay in local SQLite tables.
+# [todo_review]
+# owners = ["Chess", "Coding", "Money", "Family", "Radar", "Zero"]   # "Other" is always added
+# account = "user@example.com"            # default account for dodosend:// thread links
+# export_dir = "/var/lib/briefs/todo-review"  # holds todo-review-candidates.json (+ shortwave-thread-map.json)
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000001"
+slug = "chief-of-staff"
+name = "Chief of Staff"
+sort = 0
+area_default = "admin"
+cli_name = "chief-of-staff"
+
+[[bots]]
+id = "00000000-0000-4000-8000-000000000002"
+slug = "radar"
+name = "Radar"
+sort = 10
+area_default = "code"
+cli_name = "radar"

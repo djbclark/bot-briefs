@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# repo-discover: find repos that may need adding to repo-sync.
+#  1. Local: git clones on the box outside repo-sync's roots (asks), and clones inside them (auto).
+#  2. Server: GitHub/forgejo repos the operator owns or can access that appeared since the last run.
+# State in ~/.config/repo-sync: server-seen.txt, ignore.txt (paths or owner/name to never ask about).
+set -uo pipefail
+C="$HOME/.config/repo-sync"; mkdir -p "$C"; touch "$C/server-seen.txt" "$C/ignore.txt"
+ROOTS=(${REPO_SYNC_ROOTS:-$HOME/src /workspace $HOME/.hermes})
+inroots() { local p="$1"; for r in "${ROOTS[@]}"; do [[ "$p" == "$r"/* ]] && return 0; done; return 1; }
+ignored() { grep -qxF "$1" "$C/ignore.txt"; }
+
+echo "=== LOCAL"
+find "$HOME" /workspace -xdev -maxdepth 5 -type d -name .git \
+  -not -path '*/node_modules/*' -not -path '*/.cursor/*' -not -path '*/sand-data/*' \
+  -not -path '*/.cache/*' -not -path '*/.npm/*' -not -path '*/.local/share/uv/*' -not -path '*/go/pkg/*' \
+  -not -path '*/.cargo/*' -not -path '*/repo-sync-backups/*' 2>/dev/null | xargs -r -n1 dirname | sort -u |
+while read -r d; do
+  ignored "$d" && continue
+  url=$(git -C "$d" remote get-url origin 2>/dev/null | sed -E 's#https://[^@/]*@#https://#')
+  if inroots "$d"; then
+    [[ "$url" =~ github.com|forgejo.mit.edu ]] || echo "IN_ROOTS_NO_KNOWN_REMOTE $d ${url:-none}"
+  else
+    echo "OUTSIDE_ROOTS $d ${url:-none}"
+  fi
+done
+
+echo "=== SERVER"
+tmp=$(mktemp)
+for p in 1 2 3 4 5 6 7 8 9 10; do
+  r=$(printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" | curl -sf -K - "https://api.github.com/user/repos?per_page=100&page=$p&affiliation=owner,collaborator,organization_member") || { echo "GITHUB_API_FAILED"; break; }
+  n=$(echo "$r" | jq length); [ "$n" = 0 ] && break
+  echo "$r" | jq -r '.[] | "github:\(.full_name) private=\(.private) fork=\(.fork) archived=\(.archived)"' >> "$tmp"
+done
+for p in 1 2 3 4 5; do
+  r=$(printf 'header = "Authorization: token %s"\n' "$FORGEJO_TOKEN" | curl -sf -K - "https://forgejo.mit.edu/api/v1/user/repos?limit=50&page=$p") || { echo "FORGEJO_API_FAILED"; break; }
+  n=$(echo "$r" | jq length); [ "$n" = 0 ] && break
+  echo "$r" | jq -r '.[] | "forgejo:\(.full_name) private=\(.private) fork=\(.fork) archived=\(.archived)"' >> "$tmp"
+done
+cloned=$(for r in "${ROOTS[@]}"; do find "$r" -maxdepth 3 -type d -name .git 2>/dev/null; done | xargs -r -n1 dirname | while read -r d; do git -C "$d" remote get-url origin 2>/dev/null; done | sed -E 's#https://[^@/]*@#https://#; s#\.git$##; s#https://github.com/#github:#; s#https://forgejo.mit.edu/#forgejo:#')
+while read -r id rest; do
+  grep -qxF "$id" "$C/server-seen.txt" && continue
+  echo "$cloned" | grep -qixF "$id" && { echo "$id" >> "$C/server-seen.txt"; continue; }
+  ignored "$id" || echo "NEW_SERVER_REPO $id $rest"
+  [ "${REPO_DISCOVER_SEED:-0}" = 1 ] && echo "$id" >> "$C/server-seen.txt"
+done < "$tmp"
+rm -f "$tmp"

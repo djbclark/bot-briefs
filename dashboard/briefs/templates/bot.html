@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}{{ bot.name }} · Bot Briefs{% endblock %}
+
+{% block content %}
+<div class="bot-view">
+  <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;">
+    <h1 style="font-size: 1.4rem; font-weight: 700;">{{ bot.name }}</h1>
+    {% if latest_report and latest_report.sheet_url %}
+      <a href="{{ latest_report.sheet_url|safe_url }}" target="_blank" rel="noopener" class="btn btn-sm">
+        Open Latest Sheet ↗
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- Section 1: Latest Report Rendered -->
+  {% if latest_report %}
+    <div class="card" style="margin-bottom: 16px;">
+      <div class="card-header">
+        <div class="card-title">
+          <span>Latest Report: {{ latest_report.report_date }} ({{ latest_report.kind }})</span>
+        </div>
+        <div class="card-meta">
+          <a href="/r/{{ latest_report.id }}" class="btn btn-sm">
+            Full Report View
+          </a>
+        </div>
+      </div>
+      <div class="card-body markdown-body" style="padding: 10px 14px;">
+        {{ latest_report_html|safe }}
+      </div>
+    </div>
+  {% else %}
+    <div class="card" style="padding: 14px; margin-bottom: 16px; color: var(--text-muted);">
+      No reports published for {{ bot.name }} yet.
+    </div>
+  {% endif %}
+
+  <!-- Section 2: Items List -->
+  <div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+      <div class="card-title">
+        <span>Active & Tracked Items ({{ items|length }})</span>
+      </div>
+    </div>
+    <div class="card-body" style="padding: 6px 10px;">
+      {% if items %}
+        <div class="section-rows">
+          {% for item in items %}
+            {% include "partials/item_row.html" %}
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="color: var(--text-muted); font-size: 0.9rem; padding: 6px;">No open items.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Section 2b: Snoozed Items (if any) -->
+  {% if snoozed_items %}
+    <div class="card" style="margin-bottom: 16px;">
+      <div class="card-header">
+        <div class="card-title">
+          <span>Snoozed Items ({{ snoozed_items|length }})</span>
+        </div>
+      </div>
+      <div class="card-body" style="padding: 6px 10px;">
+        <div class="section-rows">
+          {% for item in snoozed_items %}
+            {% include "partials/item_row.html" %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Section 3: Report History -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <span>Report History</span>
+      </div>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      {% if history %}
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--border); background-color: var(--surface-alt); text-align: left; font-size: 0.85rem;">
+              <th style="padding: 8px 12px;">Date</th>
+              <th style="padding: 8px 12px;">Kind</th>
+              <th style="padding: 8px 12px;">Title</th>
+              <th style="padding: 8px 12px;">Items</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rep in history %}
+              <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 8px 12px; font-weight: 500;">
+                  <a href="/r/{{ rep.id }}">{{ rep.report_date }}</a>
+                </td>
+                <td style="padding: 8px 12px;">
+                  <span class="badge" style="background-color: var(--surface-alt);">{{ rep.kind }}</span>
+                </td>
+                <td style="padding: 8px 12px;">
+                  <a href="/r/{{ rep.id }}">{{ rep.title }}</a>
+                </td>
+                <td style="padding: 8px 12px; color: var(--text-muted); font-size: 0.85rem;">
+                  {{ rep.item_count }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p style="padding: 12px; color: var(--text-muted);">No historical reports.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

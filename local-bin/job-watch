@@ -1,0 +1,15 @@
+#!/bin/bash
+# job-watch REPO [STALL_MIN]: zero-token watcher; pings Coding bot via notify-bot only on notable events.
+repo=${1:-$HOME/src/aiuse}; stall=${2:-10}; logdir=$HOME/.local/state/acp-run
+last_head=$(git -C "$repo" rev-parse HEAD); last_br=$(git -C "$repo" branch --show-current); stalled=0
+ping(){ notify-bot coding -f job-watch -m none -s "job-watch $(basename "$repo")" "$1" >/dev/null 2>&1; }
+while sleep 60; do
+  head=$(git -C "$repo" rev-parse HEAD); br=$(git -C "$repo" branch --show-current)
+  if [ "$head" != "$last_head" ]; then ping "New commit on $br: $(git -C "$repo" log --oneline -1)"; last_head=$head; fi
+  if [ "$br" != "$last_br" ]; then ping "Branch changed $last_br -> $br (likely merged)"; last_br=$br; fi
+  newest=$(ls -t "$logdir"/*.jsonl 2>/dev/null | head -1)
+  age=$(( ($(date +%s) - $(stat -c %Y "$newest")) / 60 ))
+  if [ $age -ge $stall ] && [ $stalled = 0 ]; then ping "No coding-agent activity for ${age} min (possible stall or finished)"; stalled=1; fi
+  [ $age -lt $stall ] && stalled=0
+  if [ "$br" = main ] && [ -z "$(git -C "$repo" branch --list fixup-pools)" ] && [ "$head" != "$(git -C "$repo" rev-parse origin/main 2>/dev/null)" ]; then :; fi
+done

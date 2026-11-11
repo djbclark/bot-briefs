@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Bot Briefs{% endblock %}</title>
+  <script nonce="{{ request.state.csp_nonce }}">
+  /* Apply saved theme before first paint (auto | light | dark). */
+  (function(){try{var t=localStorage.getItem("briefs-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);else document.documentElement.setAttribute("data-theme","auto");}catch(e){}})();
+  </script>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-container">
+      <div class="header-left">
+        <a href="/" class="logo-link">Bot Briefs</a>
+        {% if user_name %}
+          <span class="user-badge">{{ user_name }}</span>
+        {% endif %}
+        <nav class="nav-links">
+          <a href="/" class="{% if current_nav == 'today' %}active{% endif %}">Today</a>
+          <a href="/history" class="{% if current_nav == 'history' %}active{% endif %}">History</a>
+          <a href="/cleanup/" class="{% if current_nav == 'cleanup' %}active{% endif %}">Cleanup</a>
+          <a href="/todo-review" class="{% if current_nav == 'todo-review' %}active{% endif %}">TODOs</a>
+        </nav>
+        <form action="/search" method="get" class="search-form">
+          <input
+            type="search"
+            name="q"
+            placeholder="Search…"
+            value="{{ search_query or '' }}"
+            class="search-input"
+            hx-get="/search"
+            hx-trigger="keyup changed delay:300ms, search"
+            hx-target="#search-container"
+            hx-push-url="true"
+          >
+        </form>
+      </div>
+      <div class="header-right">
+        {% include "partials/submit_bar.html" %}
+        <button type="button" id="theme-toggle" class="theme-toggle" data-theme-toggle
+                aria-label="Theme: Auto (follows system). Click to switch to Light." title="Theme: Auto (follows system). Click to switch to Light.">
+          <span class="theme-toggle-icon" aria-hidden="true">◐</span><span class="theme-toggle-label">Auto</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  {% if mirror_stale %}
+  <div class="dispatch-warning-banner" role="alert" style="margin:8px auto;max-width:1100px;padding:8px 12px;">
+    VPS copy: no update from the main dashboard box for {{ mirror_minutes if mirror_minutes is not none else "a long time" }} min
+    (last {{ mirror_last or "never" }} UTC). The box may be frozen, so this page can be out of date. Your actions here are saved and will reach the bots when the box is back.
+  </div>
+  {% endif %}
+
+  <main class="container" id="search-container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="container site-footer">
+    Bot Briefs · All dates/times in America/New_York (ET){% if mirror_last %} · VPS copy, box update {{ mirror_last }} UTC{% endif %}
+  </footer>
+
+  <script nonce="{{ request.state.csp_nonce }}">
+  (function() {
+    function getDrafts() {
+      var drafts = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var key = localStorage.key(i);
+        if (key && key.indexOf("briefs:draft:") === 0) {
+          var val = localStorage.getItem(key);
+          if (val && val.trim()) {
+            var id = parseInt(key.replace("briefs:draft:", ""), 10);
+            if (!isNaN(id)) {
+              drafts.push({ item_id: id, text: val.trim() });
+            }
+          }
+        }
+      }
+      return drafts;
+    }
+
+    function updateSubmitBar() {
+      var btn = document.getElementById("submit-all-btn");
+      if (!btn) return;
+      var queued = parseInt(btn.getAttribute("data-queued") || "0", 10);
+      var drafts = getDrafts();
+      var total = queued + drafts.length;
+      btn.textContent = "Submit all (" + total + ")";
+      if (total > 0) {
+        btn.removeAttribute("disabled");
+      } else {
+        btn.setAttribute("disabled", "disabled");
+      }
+    }
+
+    function restoreDrafts() {
+      var textareas = document.querySelectorAll("textarea[data-item-id]");
+      textareas.forEach(function(ta) {
+        var id = ta.getAttribute("data-item-id");
+        if (id) {
+          var key = "briefs:draft:" + id;
+          var saved = localStorage.getItem(key);
+          if (saved !== null && ta.value !== saved) {
+            ta.value = saved;
+          }
+        }
+      });
+      updateSubmitBar();
+    }
+
+    document.addEventListener("input", function(e) {
+      if (e.target && e.target.matches("textarea[data-item-id]")) {
+        var id = e.target.getAttribute("data-item-id");
+        var val = e.target.value;
+        var key = "briefs:draft:" + id;
+        if (val && val.trim()) {
+          localStorage.setItem(key, val);
+        } else {
+          localStorage.removeItem(key);
+        }
+        updateSubmitBar();
+      }
+    });
+
+    document.addEventListener("DOMContentLoaded", function() {
+      restoreDrafts();
+    });
+
+    // CSP (no inline handlers / eval): auto-submit filter selects, and send the ids of the
+    // "In progress" rows with its htmx poll (was hx-vals='js:...').
+    document.addEventListener("change", function(e) {
+      if (e.target && e.target.matches("select[data-autosubmit]") && e.target.form) e.target.form.submit();
+    });
+    document.addEventListener("htmx:configRequest", function(e) {
+      var elt = e.detail && e.detail.elt;
+      if (elt && elt.id === "in-progress") {
+        e.detail.parameters.ids = Array.from(document.querySelectorAll("#in-progress .in-prog-row"))
+          .map(function(el){ return el.dataset.itemId; }).filter(Boolean).join(",");
+      }
+    });
+
+    document.addEventListener("htmx:afterSwap", function() {
+      restoreDrafts();
+    });
+
+    document.addEventListener("htmx:load", function() {
+      restoreDrafts();
+    });
+
+    document.addEventListener("draftClear", function(e) {
+      var d = e.detail;
+      var id = null;
+      if (d) {
+        if (typeof d === "number" || typeof d === "string") id = d;
+        else if (d.item) id = d.item;
+        else if (d.value && d.value.item) id = d.value.item;
+      }
+      if (id) {
+        localStorage.removeItem("briefs:draft:" + id);
+      }
+      restoreDrafts();
+    });
+
+    document.addEventListener("draftsSubmitted", function(e) {
+      // htmx wraps non-object HX-Trigger values as {value: ...}
+      var items = e.detail;
+      if (items && !Array.isArray(items) && Array.isArray(items.value)) items = items.value;
+      if (items && Array.isArray(items)) {
+        items.forEach(function(id) {
+          localStorage.removeItem("briefs:draft:" + id);
+        });
+      }
+      restoreDrafts();
+    });
+
+    // Keep the filter form in sync with the URL (e.g. after "Show all" or back/forward)
+    function syncFilterForm() {
+      var f = document.getElementById("filter-form");
+      if (!f) return;
+      var q = new URLSearchParams(window.location.search);
+      ["bot", "area"].forEach(function(n) {
+        var el = f.elements[n]; if (!el) return;
+        var v = q.get(n) || "";
+        el.value = v;
+        if (el.value !== v) {
+          // URL used an alias (e.g. a bot slug): match by option text/value case-insensitively, else "All".
+          var lv = v.toLowerCase(), hit = "";
+          for (var i = 0; i < el.options.length; i++) {
+            var o = el.options[i];
+            if (o.value.toLowerCase() === lv || o.text.toLowerCase() === lv || (o.dataset.slug || "") === lv) { hit = o.value; break; }
+          }
+          el.value = hit;
+        }
+      });
+      if (f.elements["status"]) f.elements["status"].value = q.get("status") || "open";
+      ["new", "due"].forEach(function(n) { if (f.elements[n]) f.elements[n].checked = !!q.get(n); });
+    }
+    // Bot and Area are alternative narrowings (each bot has its own area), so picking one clears the other;
+    // otherwise a leftover Area silently empties every other bot's list. Runs before htmx's form "change" handler.
+    document.addEventListener("change", function(evt) {
+      var t = evt.target, f = document.getElementById("filter-form");
+      if (!f || !t || t.form !== f) return;
+      if (t.name === "bot" && t.value && f.elements["area"]) f.elements["area"].value = "";
+      if (t.name === "area" && t.value && f.elements["bot"]) f.elements["bot"].value = "";
+    }, true);
+    // Chrome restores form-control state on reload/back (bfcache); always re-derive filters from the URL.
+    document.addEventListener("DOMContentLoaded", syncFilterForm);
+    window.addEventListener("pageshow", syncFilterForm);
+    document.addEventListener("htmx:pushedIntoHistory", syncFilterForm);
+    document.addEventListener("htmx:historyRestore", syncFilterForm);
+
+    document.addEventListener("queueChanged", function() {
+      updateSubmitBar();
+    });
+
+    document.addEventListener("htmx:configRequest", function(evt) {
+      if (evt.detail.path === "/submit-all") {
+        var drafts = getDrafts();
+        evt.detail.parameters["drafts"] = JSON.stringify(drafts);
+      }
+    });
+    // Theme toggle: cycles Auto -> Light -> Dark; delegated so it survives htmx swaps.
+    var THEMES = ["auto", "light", "dark"];
+    var THEME_INFO = { auto: ["◐", "Auto", "Auto (follows system)"], light: ["☀", "Light", "Light"], dark: ["☾", "Dark", "Dark"] };
+    function currentTheme() {
+      var t = document.documentElement.getAttribute("data-theme");
+      return THEMES.indexOf(t) >= 0 ? t : "auto";
+    }
+    function renderThemeToggle() {
+      var t = currentTheme(), next = THEMES[(THEMES.indexOf(t) + 1) % 3], i = THEME_INFO[t];
+      document.querySelectorAll("[data-theme-toggle]").forEach(function(b) {
+        var label = "Theme: " + i[2] + ". Click to switch to " + THEME_INFO[next][1] + ".";
+        b.setAttribute("aria-label", label); b.setAttribute("title", label);
+        b.setAttribute("data-current", t);
+        var ic = b.querySelector(".theme-toggle-icon"), lb = b.querySelector(".theme-toggle-label");
+        if (ic) ic.textContent = i[0]; if (lb) lb.textContent = i[1];
+      });
+    }
+    document.addEventListener("click", function(e) {
+      var b = e.target.closest && e.target.closest("[data-theme-toggle]");
+      if (!b) return;
+      var t = THEMES[(THEMES.indexOf(currentTheme()) + 1) % 3];
+      document.documentElement.setAttribute("data-theme", t);
+      try { if (t === "auto") localStorage.removeItem("briefs-theme"); else localStorage.setItem("briefs-theme", t); } catch (err) {}
+      renderThemeToggle();
+    });
+    document.addEventListener("DOMContentLoaded", renderThemeToggle);
+    document.addEventListener("htmx:load", renderThemeToggle);
+    window.addEventListener("storage", function(e) {
+      if (e.key !== "briefs-theme") return;
+      var v = e.newValue; document.documentElement.setAttribute("data-theme", (v === "light" || v === "dark") ? v : "auto");
+      renderThemeToggle();
+    });
+    // Accordion for item details: at most one <details class="row-detail"> open at a time.
+    // "toggle" doesn't bubble, so listen in the capture phase (also covers htmx-swapped rows).
+    document.addEventListener("toggle", function(e) {
+      var d = e.target;
+      if (!d.matches || !d.matches("details.row-detail") || !d.open) return;
+      document.querySelectorAll("details.row-detail[open]").forEach(function(o) {
+        if (o !== d) o.open = false;
+      });
+    }, true);
+    function closeRowDetails(except) {
+      document.querySelectorAll("details.row-detail[open]").forEach(function(o) {
+        if (o !== except) o.open = false;
+      });
+    }
+    document.addEventListener("click", function(e) {
+      var inside = e.target.closest && e.target.closest("details.row-detail");
+      closeRowDetails(inside);
+    });
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") closeRowDetails(null);
+    });
+  })();
+  </script>
+</body>
+</html>

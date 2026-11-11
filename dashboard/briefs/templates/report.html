@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}{{ report.title }} · {{ report.bot_name }}{% endblock %}
+
+{% block content %}
+<div class="report-view">
+  <!-- Nav buttons (prev/next) -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+    <div>
+      {% if report.prev %}
+        <a href="/r/{{ report.prev.id }}" class="btn" style="min-height: 36px;">
+          ← Prev ({{ report.prev.report_date }})
+        </a>
+      {% endif %}
+    </div>
+    <a href="/b/{{ report.bot_slug }}" style="font-weight: 500;">
+      All {{ report.bot_name }} Reports
+    </a>
+    <div>
+      {% if report.next %}
+        <a href="/r/{{ report.next.id }}" class="btn" style="min-height: 36px;">
+          Next ({{ report.next.report_date }}) →
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h1 style="font-size: 1.25rem; font-weight: 700;">{{ report.title }}</h1>
+        <div class="card-meta" style="margin-top: 4px;">
+          <span>{{ report.bot_name }}</span> ·
+          <span>{{ report.report_date }} ({{ report.kind }})</span>
+          {% if report.sheet_url %}
+            · <a href="{{ report.sheet_url|safe_url }}" target="_blank" rel="noopener">Reply Sheet ↗</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="card-body markdown-body">
+      {{ body_html|safe }}
+    </div>
+  </div>
+
+  <!-- Items in this report -->
+  <div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+      <div class="card-title">
+        <span>Report Items ({{ report['items']|length }})</span>
+      </div>
+    </div>
+    <div class="card-body">
+      {% for item in report['items'] %}
+        <div class="item-row {% if item.status == 'resolved' %}item-resolved{% endif %}"
+             id="item-row-{{ item.item_id }}"
+             style="{% if item.parent_display_id %}padding-left: 20px; border-left: 2px solid var(--border); margin-left: 8px;{% endif %}">
+          <span class="item-id">{{ item.display_id }}</span>
+          <div class="item-content" style="width: 100%;">
+            <div class="item-title-line">
+              <a href="/i/{{ item.item_id }}" class="item-title-text">{{ item.item_title }}</a>
+              {% for f in item.flags_list %}
+                {% if f == 'NEW' %}
+                  <span class="badge badge-new">NEW</span>
+                {% elif f == 'updated' %}
+                  <span class="badge badge-updated">updated</span>
+                {% elif f == 'resolved' %}
+                  <span class="badge badge-resolved">resolved</span>
+                {% endif %}
+              {% endfor %}
+              {% if item.due_at %}
+                <span class="badge badge-due">Due {{ item.due_at }}</span>
+              {% endif %}
+              <button class="btn btn-sm" hx-get="/i/{{ item.item_id }}/actions?from_row=1" hx-target="#item-actions-{{ item.item_id }}" hx-swap="innerHTML" style="min-height: 32px; padding: 0 8px; font-size: 0.8rem; margin-left: 8px;">⋯</button>
+              <a href="/i/{{ item.item_id }}" style="font-size: 0.75rem; margin-left: auto; color: var(--text-muted);">
+                View Timeline →
+              </a>
+            </div>
+            {% if item.body_md %}
+              <div class="item-subtext markdown-body">{{ item.body_md|md }}</div>
+            {% endif %}
+            {% if item.links %}
+              <div class="item-links">
+                {% for l in item.links %}
+                  <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener">{{ l.label }}</a>
+                {% endfor %}
+              </div>
+            {% endif %}
+            <div id="item-actions-{{ item.item_id }}" style="width: 100%;"></div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

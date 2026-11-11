@@ -1,0 +1,9 @@
+# Monit (user box) — see /home/box/agent-data/shared/watchdogs.md
+set daemon 30 with start delay 10
+set log /home/box/.local/state/watchdogs/monit.log
+set pidfile /home/box/.local/state/watchdogs/monit.pid
+set idfile /home/box/.local/state/watchdogs/monit.id
+set statefile /home/box/.local/state/watchdogs/monit.state
+set httpd unixsocket /home/box/.local/state/watchdogs/monit.sock
+    allow box:monit
+include /home/box/agent-data/shared/watchdogs/conf.d/*.monitrc

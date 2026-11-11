@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""risk-watch: zero-token box risk watcher (disk + grok-bot weekly pool).
+Usage: risk-watch check [--dry-run]   one pass (dry-run: print what would be sent, no state change)
+       risk-watch loop                run check every 10 min forever (used by start)
+       risk-watch start | stop | status
+Force thresholds for testing (env): RW_DISK_WARN, RW_DISK_CRIT, RW_ETA_H, RW_POOL_PROJ, RW_POOL_USED, RW_POOL_CRIT
+State/logs: ~/.local/state/risk-watch/   Sends: notify-bot coding + hermes-ping "box: <warning>" (Telegram)."""
+import json, os, subprocess, sys, time, datetime, signal
+from zoneinfo import ZoneInfo
+H = os.path.expanduser("~"); BIN = H + "/.local/bin"; ST = H + "/.local/state/risk-watch"
+os.makedirs(ST, exist_ok=True)
+ET = ZoneInfo("America/New_York")
+E = lambda k, d: float(os.environ.get(k, d))
+DISK_WARN, DISK_CRIT, ETA_H = E("RW_DISK_WARN", 85), E("RW_DISK_CRIT", 95), E("RW_ETA_H", 24)
+POOL_PROJ, POOL_USED, POOL_CRIT = E("RW_POOL_PROJ", 90), E("RW_POOL_USED", 80), E("RW_POOL_CRIT", 95)
+REWARN = 6 * 3600; INTERVAL = 600
+def log(m):
+    with open(ST + "/log", "a") as f: f.write(f"{datetime.datetime.now(ET):%F %T %Z} {m}\n")
+def et(ts): return datetime.datetime.fromtimestamp(ts, ET).strftime("%a %b %-d %-I:%M %p ET")
+def load(n, d):
+    try: return json.load(open(f"{ST}/{n}"))
+    except Exception: return d
+def save(n, v):
+    t = f"{ST}/{n}.tmp"; json.dump(v, open(t, "w")); os.replace(t, f"{ST}/{n}")
+
+def disk_checks(now, hist):
+    seen, out = {}, []
+    for p in ["/", H, "/workspace"]:
+        try: s = os.statvfs(p); dev = os.stat(p).st_dev
+        except OSError: continue
+        seen.setdefault(dev, (p, s))
+    for dev, (p, s) in seen.items():
+        tot = s.f_blocks * s.f_frsize; avail = s.f_bavail * s.f_frsize
+        used = tot - s.f_bfree * s.f_frsize; pct = 100 * used / (used + avail) if used + avail else 0
+        key = f"disk:{dev}"; h = [x for x in hist.get(key, []) if now - x[0] <= 6 * 3600] + [[now, used]]
+        hist[key] = h
+        eta = None
+        if len(h) >= 2 and now - h[0][0] >= 1800:
+            rate = (h[-1][1] - h[0][1]) / (h[-1][0] - h[0][0])  # bytes/s over last <=6h
+            if rate > 0: eta = avail / rate
+        sev = 2 if pct >= DISK_CRIT else 1 if (pct >= DISK_WARN or (eta is not None and eta < ETA_H * 3600)) else 0
+        eta_s = f"full in ~{eta/3600:.1f}h (~{et(now+eta)})" if eta else "no recent growth"
+        msg = (f"Disk {p} (dev {dev}) {pct:.1f}% used, {avail/2**30:.1f} GiB free of {tot/2**30:.1f} GiB; {eta_s}")
+        out.append((key, sev, msg))
+    return out
+
+def pool_checks(now):
+    try:
+        r = subprocess.run([BIN + "/codexbar", "usage", "--provider", "cursor", "--source", "auto", "--format", "json"],
+                           capture_output=True, text=True, timeout=120)
+        data = json.loads(r.stdout)
+    except Exception as e:
+        log(f"codexbar error: {e!r}"); return [], f"codexbar error: {e!r}"
+    out = []
+    for ent in data if isinstance(data, list) else [data]:
+        for w in (ent.get("usage") or {}).get("extraRateWindows") or []:
+            wid = w.get("id", "")
+            if not wid.startswith("cursor-grok-bot"): continue
+            win = w.get("window") or {}; used = float(win.get("usedPercent") or 0)
+            mins = float(win.get("windowMinutes") or 10080)
+            reset = datetime.datetime.fromisoformat(win["resetsAt"].replace("Z", "+00:00")).timestamp()
+            frac = max(1e-3, min(1.0, 1 - (reset - now) / (mins * 60)))
+            proj = used / frac
+            sev = 2 if (used >= POOL_CRIT or proj >= 100) else 1 if (used >= POOL_USED or proj >= POOL_PROJ) else 0
+            msg = (f"Grok Bot pool {wid}: {used:.1f}% used at {frac*100:.0f}% of {mins/1440:.0f}-day window; "
+                   f"projected {proj:.0f}% at reset {et(reset)}")
+            out.append((f"pool:{wid}", sev, msg))
+    if not out: log("no cursor-grok-bot window found")
+    return out, None
+
+def deliver(msg, dry):
+    cmds = [[BIN + "/notify-bot", "coding", "-f", "risk-watch", "-m", "none", "-s", "risk-watch", msg],
+            [BIN + "/hermes-ping", f"box: {msg}"]]
+    for c in cmds:
+        if dry: print("DRY-RUN would run:", " ".join(json.dumps(x) if " " in x else x for x in c)); continue
+        try:
+            r = subprocess.run(c, capture_output=True, text=True, timeout=180)
+            log(f"sent via {os.path.basename(c[0])} rc={r.returncode}")  # output not logged (no secrets)
+        except Exception as e: log(f"send error {os.path.basename(c[0])}: {e!r}")
+
+def check(dry=False):
+    now = time.time(); hist = load("history.json", {}); alerts = load("alerts.json", {})
+    items = disk_checks(now, hist); p, err = pool_checks(now); items += p
+    if not dry: save("history.json", hist)
+    fired = []
+    for key, sev, msg in items:
+        print(f"[sev {sev}] {msg}")
+        prev = alerts.get(key)
+        if sev == 0:
+            alerts.pop(key, None); continue
+        if prev is None or sev > prev["sev"] or now - prev["t"] >= REWARN:
+            fired.append(("CRITICAL" if sev == 2 else "WARNING") + f" risk-watch: {msg}")
+            alerts[key] = {"sev": sev, "t": now}
+        else: alerts[key]["sev"] = max(sev, prev["sev"]) if sev >= prev["sev"] else sev
+    for m in fired: print("FIRE:", m); deliver(m, dry); not dry and log("FIRED " + m)
+    if not dry: save("alerts.json", alerts); save("last.json", {"t": now, "items": items})
+    if not fired: print("no warning fired")
+
+def pidalive():
+    try: pid = int(open(ST + "/pid").read()); os.kill(pid, 0); return pid
+    except Exception: return None
+
+a = sys.argv[1:] or ["check"]
+if a[0] == "check": check("--dry-run" in a or "-n" in a)
+elif a[0] == "loop":
+    open(ST + "/pid", "w").write(str(os.getpid()))
+    while True:
+        try: check()
+        except Exception as e: log(f"check error {e!r}")
+        sys.stdout.flush(); time.sleep(INTERVAL)
+elif a[0] == "start":
+    if pidalive(): print("already running pid", pidalive()); sys.exit(0)
+    subprocess.Popen(["nohup", sys.argv[0], "loop"], stdout=open(ST + "/loop.out", "a"), stderr=subprocess.STDOUT,
+                     stdin=subprocess.DEVNULL, start_new_session=True); time.sleep(1); print("started pid", pidalive())
+elif a[0] == "stop":
+    p = pidalive(); p and os.kill(p, signal.SIGTERM); print("stopped" if p else "not running")
+elif a[0] == "status": print("running pid", pidalive()) if pidalive() else print("not running")
+else: print(__doc__)

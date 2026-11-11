@@ -1,0 +1,64 @@
+<div id="item-list"
+     hx-get="{{ current_query_path or '/' }}"
+     hx-trigger="listChanged from:body"
+     hx-swap="outerHTML"
+     class="item-list-container">
+  <!-- Chief of Staff Section -->
+  {% if cos and cos['items'] %}
+    <section class="bot-section cos-section" id="section-cos">
+      <div class="section-header">
+        <span class="section-title">Chief of Staff</span>
+        <span class="section-meta">· {{ cos['items']|length }} open · report {{ cos.as_of }}</span>
+        {% if cos.report %}
+          <a href="/r/{{ cos.report.id }}" class="section-link">view report</a>
+        {% endif %}
+      </div>
+      <div class="section-rows">
+        {% for item in cos['items'] %}
+          {% include "partials/item_row.html" %}
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <!-- Per-Bot Sections -->
+  {% for card in bot_cards %}
+    {% if card['items'] %}
+      <section class="bot-section" id="section-{{ card.bot.slug }}">
+        <div class="section-header">
+          <a href="/b/{{ card.bot.slug }}" class="section-title">{{ card.bot.name }}</a>
+          <span class="section-meta">· {{ card['items']|length }} open{% if card.report %} · report {{ card.report.report_date }}{% endif %}</span>
+          {% if card.report and card.report.sheet_url %}
+            <a href="{{ card.report.sheet_url|safe_url }}" target="_blank" rel="noopener" class="section-link">↗ sheet</a>
+          {% endif %}
+        </div>
+        <div class="section-rows">
+          {% set cap = 0 if filter_bot else 25 %}
+          {% for item in card['items'] %}
+            {% if not cap or loop.index <= cap %}{% include "partials/item_row.html" %}{% endif %}
+          {% endfor %}
+          {% if cap and card['items']|length > cap %}
+            <button type="button" class="show-all-btn"
+                    hx-get="/?bot={{ card.bot.cli_name }}&area={{ filter_area|urlencode }}&status={{ filter_status|urlencode }}{% if filter_new %}&new=true{% endif %}{% if filter_due %}&due=true{% endif %}"
+                    hx-target="#item-list" hx-swap="outerHTML" hx-push-url="true">Show all {{ card['items']|length }} {{ card.bot.name }} items</button>
+          {% endif %}
+        </div>
+      </section>
+    {% endif %}
+  {% endfor %}
+
+  {% if not (cos and cos['items']) and not bot_cards %}
+    <div class="empty-state" id="empty-state">
+      No items match
+      {%- if filter_bot %} Bot = <strong>{{ filter_bot_name or filter_bot }}</strong>{% endif %}
+      {%- if filter_area %}{% if filter_bot %},{% endif %} Area = <strong>{{ filter_area }}</strong>{% endif %}
+      {%- if filter_status and filter_status != 'open' %}, Status = <strong>{{ filter_status }}</strong>{% endif %}
+      {%- if filter_new %}, NEW only{% endif %}
+      {%- if filter_due %}, Has due date{% endif %}.
+      {% if filter_bot or filter_area or filter_new or filter_due or (filter_status and filter_status != 'open') %}
+        <button type="button" class="show-all-btn" id="clear-filters-btn"
+                hx-get="/" hx-target="#item-list" hx-swap="outerHTML" hx-push-url="true">Clear filters</button>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>

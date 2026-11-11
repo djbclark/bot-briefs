@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""report-to-items: convert a Chief of Staff markdown report into `brief publish --items-json` rows.
+
+Rows: {"id": str, "item": str, "details": str, "links": [{"label","url"}], "key": str, "due"?: "YYYY-MM-DD"}
+Schema per briefs/cli.py parse_items_json_data: id "N.M" => parent is "N" (hierarchy from the dot);
+key ties an item across days (items table is unique on bot_id+item_key; last_seen bumps on republish).
+Keys: gmail:<threadHex> | github PR/issue URL | h:<sha1(first 8 normalized words)[:12]>.
+Usage: report-to-items report.md [-o FILE] [--year YYYY] | report-to-items --selftest
+"""
+import hashlib, json, re, sys, argparse, datetime
+
+LINK = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
+MONTHS = {m: i + 1 for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split())}
+
+def gmail_thread(url):
+    if "mail.google.com" not in url:
+        return None
+    m = re.search(r"thread-f:(\d+)", url)
+    if m:
+        return format(int(m.group(1)), "x")
+    m = re.search(r"#[a-z]+(?:/[^/?#]+)?/([0-9a-fA-F]{16})\b", url)
+    return m.group(1).lower() if m else None
+
+def github_key(url):
+    m = re.match(r"https?://github\.com/([^/]+/[^/]+)/(pull|issues)/(\d+)", url)
+    return f"https://github.com/{m.group(1)}/{m.group(2)}/{m.group(3)}" if m else None
+
+def hkey(text):
+    words = re.sub(r"[^a-z0-9 ]+", " ", text.lower()).split()
+    words = [w for w in words if w not in ("new", "fyi")][:8]
+    return "h:" + hashlib.sha1(" ".join(words).encode()).hexdigest()[:12]
+
+def due_hint(text, year):
+    m = re.search(r"\b(?:due|by|until|ends?|renews?)\b[^.]{0,20}?\b(?:mon|tue|wed|thu|fri|sat|sun)?[a-z]*\.?\s*\**\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b", text, re.I)
+    if not m:
+        return None
+    try:
+        return datetime.date(year, MONTHS[m.group(1).lower()], int(m.group(2))).isoformat()
+    except ValueError:
+        return None
+
+def clean(s):
+    return re.sub(r"\s+", " ", LINK.sub(lambda m: m.group(1), s).replace("**", "")).strip()
+
+def parse(md, year=None):
+    year = year or datetime.date.today().year
+    rows, cur = [], None
+    def new(id_, text):
+        nonlocal cur
+        links = [{"label": l, "url": u} for l, u in LINK.findall(text)]
+        cur = {"id": id_, "item": clean(LINK.sub("", text)).rstrip(" :"), "details": "", "links": links, "_raw": text}
+        rows.append(cur)
+    for line in md.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        m = re.match(r"^\*\*Most urgent:?\*\*:?\s*(.*)$", s, re.I)
+        if m:
+            new("0", m.group(1)); continue
+        m = re.match(r"^\*\*(\d+)\.\s*(.+?)\*\*\s*$", s) or re.match(r"^#{1,4}\s*(\d+)\.\s*(.+)$", s)
+        if m:
+            new(m.group(1), m.group(2)); continue
+        m = re.match(r"^(\d+\.\d+)\.?\s+(.*)$", s)
+        if m:
+            new(m.group(1), m.group(2)); continue
+        if cur is None:
+            continue  # preamble without an item: ignore
+        text = re.sub(r"^[-*+]\s+", "", s)
+        cur["links"] += [{"label": l, "url": u} for l, u in LINK.findall(text)]
+        cur["details"] = (cur["details"] + "\n" + clean(text)).strip()
+        cur["_raw"] += " " + text
+    seen = {}
+    for r in rows:
+        key = None
+        for l in r["links"]:
+            t = gmail_thread(l["url"])
+            if t:
+                key = f"gmail:{t}"; break
+        if not key:
+            for l in r["links"]:
+                key = github_key(l["url"])
+                if key:
+                    break
+        if not key:
+            key = hkey(r["item"])
+        if "." not in r["id"] and r["id"] != "0" and key.startswith("h:"):
+            key = "h:sec:" + key[2:]  # section headers stay distinct from items
+        if key in seen:  # keys must be unique within a report or rows merge
+            seen[key] += 1
+            key = f"{key}#{r['id']}"
+        else:
+            seen[key] = 1
+        r["key"] = key
+        if "." in r["id"] or r["id"] == "0":
+            d = due_hint(r.pop("_raw"), year)
+            if d:
+                r["due"] = d
+        r.pop("_raw", None)
+    return rows
+
+def selftest():
+    sample = """**Most urgent:** tomorrow, **Fri Oct 30**, is the last day [Gmail](https://mail.google.com/mail/u/0/#all/0123456789abcdef)
+
+**1. Today**
+
+1.1 Amazon return: drop off by Fri Oct 30.
+  - continuation note [PR](https://github.com/a/b/pull/7)
+weird line
+**2. Business**
+
+2.1 draft [d](https://mail.google.com/mail/?authuser=x#all?compose=thread-f:81985529216486895%2Bmsg-a:r-1)
+2.2 Same text here
+2.3 Same text here
+"""
+    r = parse(sample, 2026)
+    ids = [x["id"] for x in r]
+    assert ids == ["0", "1", "1.1", "2", "2.1", "2.2", "2.3"], ids
+    assert r[0]["key"] == "gmail:0123456789abcdef", r[0]
+    assert r[2]["key"] == "https://github.com/a/b/pull/7" and r[2]["due"] == "2026-10-30", r[2]
+    assert "weird line" in r[2]["details"]
+    assert r[4]["key"] == "gmail:" + format(81985529216486895, "x")
+    assert r[6]["key"] == r[5]["key"] + "#2.3"
+    assert parse(sample, 2026) == r and parse("", 2026) == [] and parse("junk\n**x", 2026) == []
+    import os
+    p = "/workspace/report-1029.md"
+    if os.path.exists(p):
+        rr = parse(open(p, encoding="utf-8").read(), 2026)
+        assert rr[0]["id"] == "0" and len({x["key"] for x in rr}) == len(rr)
+    print("selftest ok")
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("report", nargs="?")
+    ap.add_argument("-o", "--output")
+    ap.add_argument("--year", type=int)
+    ap.add_argument("--selftest", action="store_true")
+    a = ap.parse_args()
+    if a.selftest:
+        return selftest()
+    md = sys.stdin.read() if a.report in (None, "-") else open(a.report, encoding="utf-8", errors="replace").read()
+    out = json.dumps(parse(md, a.year), indent=1, ensure_ascii=False) + "\n"
+    if a.output:
+        open(a.output, "w", encoding="utf-8").write(out)
+    else:
+        sys.stdout.write(out)
+
+if __name__ == "__main__":
+    main()

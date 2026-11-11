@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Periodic dashboard chores (moved from dashboard-keepalive.sh): re-apply the tailnet-only
+# Serve mapping if it vanished (never Funnel), nightly safety-net import after 03:45 ET, log trimming.
+export PATH=/home/box/.local/bin:/usr/bin:/bin
+D=/home/box/agent-data/shared/dashboard; RUN=/home/box/.local/share/briefs-dashboard; LOG=$RUN/keepalive.log
+TS_SOCK=/home/box/.local/share/tailscale/tailscaled.sock; PORT=8642
+mkdir -p "$RUN" "$D/logs"; log() { echo "$(date -Is) $*" >> "$LOG"; }
+if [ -S "$TS_SOCK" ] && ! tailscale --socket="$TS_SOCK" serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
+  if timeout 15 tailscale --socket="$TS_SOCK" status --peers=false >/dev/null 2>&1; then
+    log "serve mapping missing; re-applying https:443 / -> 127.0.0.1:$PORT (tailnet only)"
+    timeout 30 tailscale --socket="$TS_SOCK" serve --bg --https=443 "http://127.0.0.1:$PORT" >> "$LOG" 2>&1
+  fi
+fi
+today=$(TZ=America/New_York date +%F); hm=$(TZ=America/New_York date +%H%M)
+if [ "$hm" -ge 0345 ] && [ "$(cat "$RUN/last-import" 2>/dev/null)" != "$today" ]; then
+  echo "$today" > "$RUN/last-import"; log "nightly import starting (background)"
+  ( cd "$D" && timeout 1200 "$D/.venv/bin/python" -m briefs.importer >> "$D/logs/import.log" 2>&1
+    log "nightly import finished (exit $?)" ) < /dev/null > /dev/null 2>&1 &
+fi
+for f in "$LOG" "$D/logs/server.log" "$D/logs/access.log" "$D/logs/import.log" \
+         /home/box/.local/share/tailscale/tailscaled.log /home/box/.local/share/mac-mcp-forwarder/forwarder.log \
+         /home/box/.local/state/watchdogs/watchdog.log /home/box/.local/state/watchdogs/monit.log; do
+  [ -f "$f" ] && [ "$(stat -c %s "$f")" -gt 5000000 ] && tail -c 1000000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+done
+exit 0

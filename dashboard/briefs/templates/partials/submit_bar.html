@@ -1,0 +1,13 @@
+<div id="submit-bar" hx-get="/submit-bar" hx-trigger="queueChanged from:body" hx-swap="outerHTML">
+  <button id="submit-all-btn"
+          type="button"
+          class="btn btn-primary submit-all-btn"
+          data-queued="{{ queued_count or 0 }}"
+          hx-post="/submit-all"
+          hx-target="#submit-status"
+          hx-swap="innerHTML"
+          disabled>
+    Submit all ({{ queued_count or 0 }})
+  </button>
+  <span id="submit-status" class="submit-status"></span>
+</div>

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Search · Bot Briefs{% endblock %}
+
+{% block content %}
+<div class="search-page">
+  <div style="margin-bottom: 20px;">
+    <h1 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 12px;">Search Reports & Items</h1>
+    <form action="/search" method="get">
+      <input
+        type="search"
+        name="q"
+        value="{{ query or '' }}"
+        placeholder="Search keywords (e.g. hyades, qwen, recital, openafs)..."
+        class="search-input"
+        style="width: 100%; max-width: 500px; font-size: 1rem; padding: 10px 14px; min-height: 44px;"
+        hx-get="/search"
+        hx-trigger="keyup changed delay:300ms, search"
+        hx-target="#search-results-content"
+        hx-push-url="true"
+        autofocus
+      >
+    </form>
+  </div>
+
+  <div id="search-results-container">
+    {% include "partials/search_results.html" %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,82 @@
+<div id="search-results-content">
+  {% if query %}
+    <h2 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 16px;">
+      Results for "{{ query }}"
+    </h2>
+
+    <!-- Reports matches -->
+    <div class="card" style="margin-bottom: 24px;">
+      <div class="card-header">
+        <div class="card-title">
+          <span>Reports ({{ reports|length }})</span>
+        </div>
+      </div>
+      <div class="card-body">
+        {% if reports %}
+          {% for r in reports %}
+            <div style="padding: 10px 0; border-bottom: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <a href="/r/{{ r.id }}" style="font-weight: 600;">
+                  {% if r.title_snippet %}
+                    {{ r.title_snippet }}
+                  {% else %}
+                    {{ r.title }}
+                  {% endif %}
+                </a>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">{{ r.bot_name }} · {{ r.report_date }}</span>
+              </div>
+              {% if r.body_snippet %}
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+                  ...{{ r.body_snippet }}...
+                </p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <p style="color: var(--text-muted); font-size: 0.9rem;">No matching reports.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Items matches -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>Items ({{ items|length }})</span>
+        </div>
+      </div>
+      <div class="card-body">
+        {% if items %}
+          {% for it in items %}
+            <div style="padding: 10px 0; border-bottom: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <div>
+                  <span class="badge" style="background-color: var(--surface-alt);">{{ it.bot_name }}</span>
+                  <a href="/i/{{ it.id }}" style="font-weight: 600; margin-left: 6px;">
+                    {% if it.title_snippet %}
+                      {{ it.title_snippet }}
+                    {% else %}
+                      {{ it.title }}
+                    {% endif %}
+                  </a>
+                </div>
+                <span class="badge {% if it.status == 'resolved' %}badge-resolved{% else %}badge-new{% endif %}">
+                  {{ it.status }}
+                </span>
+              </div>
+              {% if it.body_snippet %}
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+                  ...{{ it.body_snippet }}...
+                </p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <p style="color: var(--text-muted); font-size: 0.9rem;">No matching items.</p>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <p style="color: var(--text-muted); padding: 20px 0;">Enter a search term to find reports and items.</p>
+  {% endif %}
+</div>

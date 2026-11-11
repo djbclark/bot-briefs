@@ -1,0 +1,8 @@
+dev/samples/
+data/
+.venv/
+__pycache__/
+*.pyc
+logs/
+config.local.env
+*.local.env

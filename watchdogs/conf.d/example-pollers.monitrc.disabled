@@ -1,0 +1,8 @@
+# Zero-token poller drop-in (example). Ships DISABLED: monit only includes conf.d/*.monitrc.
+# Enable: seed state with --dry-run-save, then rename to example-pollers.monitrc and reload (see
+# shared-docs/zero-token-pollers.md). With `set daemon 30`, "every 10 cycles" = every 5 minutes.
+# The script exits 0 whether or not it found a change; != 0 means the poller itself is broken.
+
+check program example-poller with path "/home/box/agent-data/shared/watchdogs/bin/wd-example-poller" with timeout 120 seconds
+    every 10 cycles
+    if status != 0 for 3 cycles then alert

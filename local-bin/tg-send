@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Companion to tgcli (`tg`, read-only): sends messages using tgcli's session/config.
+export TGCLI_NO_UPDATE_CHECK="${TGCLI_NO_UPDATE_CHECK:-1}"
+exec "$HOME/.local/share/uv/tools/pytgcli/bin/python" "$HOME/.local/share/tg-send/tg_send.py" "$@"

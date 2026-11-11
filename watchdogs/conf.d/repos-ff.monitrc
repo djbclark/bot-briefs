@@ -1,0 +1,4 @@
+# Keep a list of nested checkouts fast-forwarded (zero LLM tokens). every 120 cycles = hourly.
+check program repos-ff with path "/home/box/agent-data/shared/watchdogs/bin/wd-repos-ff" with timeout 300 seconds
+    every 120 cycles
+    if status != 0 then alert

@@ -1,0 +1,4 @@
+# Keep one example checkout fast-forwarded (zero LLM tokens). Daemon cycle 30s; every 120 cycles = hourly.
+check program repo-ff with path "/home/box/agent-data/shared/watchdogs/bin/wd-repo-ff" with timeout 120 seconds
+    every 120 cycles
+    if status != 0 then alert
