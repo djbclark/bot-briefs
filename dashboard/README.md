@@ -44,7 +44,7 @@ The database (`data/briefs.db`, overridable via `BRIEFS_DB`) consists of 5 core 
 ### Stable Item Keys (`item_key`)
 
 Display IDs (e.g. `1`, `2.1`) change daily as item lists are re-ranked. To maintain continuity, items are keyed using:
-1. **Preferred Source URLs**: First source link in the item matching preferred hosts (`mail.google.com`, `github.com`, `forgejo.*`, `*.atlassian.net/jira`, `gerrit.*`), normalized by stripping query parameters and fragments (except Gmail 16-hex thread IDs and Gerrit change IDs).
+1. **Preferred Source URLs**: First source link in the item matching preferred hosts (`mail.google.com`, `dodosend.com`, `dodo-link.pages.dev`, `github.com`, `forgejo.*`, `*.atlassian.net/jira`, `gerrit.*`), or a `dodosend://thread/<id>` link. Gmail/Dodosend thread URLs normalize to the key `gmail:<16-hex-id>`. Other URLs are normalized by stripping query parameters and fragments (except Gerrit change IDs).
 2. **Gmail Thread IDs**: Detected in item text (e.g., `thread 0123456789abcdef`) -> `gmail:<id>`.
 3. **Normalized Title Hash**: For items without URLs, `h:` + SHA1 hash of the first 12 words of normalized text (lowercased, links converted to labels, flags and dates/times/numbers stripped, punctuation removed).
 
@@ -206,13 +206,13 @@ Prefer `--items-json` with a **stable key per row**. That key is what ties an it
 
 ```json
 [
-  ["1", "Reply to Bob", "Waiting since Tue", [["thread", "https://mail.google.com/mail/u/0/#inbox/18c..."]]],
+  ["1", "Reply to Bob", "Waiting since Tue", [["thread", "https://dodosend.com/t/18c0123456789abc?account=user@example.com"]]],
   ["2", "Electric bill", "Due Fri", [], "money:power-bill-2026-10"],
   {"id": "3", "item": "School form", "details": "Sign + return", "key": "family:school-form", "due": "2026-10-30", "links": ["https://..."]}
 ]
 ```
 
-Key precedence: explicit `key` (5th list element or dict `key`), then the item's first source link (Gmail, GitHub or Forgejo preferred; sheet links ignored), then a Gmail thread id in the text, then `h:` + a hash of the normalized title. Never the display number. Republishing the same bot+date updates that report in place.
+Key precedence: explicit `key` (5th list element or dict `key`), then the item's first source link (Gmail/Dodosend, GitHub or Forgejo preferred; sheet links ignored), then a Gmail thread id in the text, then `h:` + a hash of the normalized title. Never the display number. Republishing the same bot+date updates that report in place. Displayed Gmail thread links use `https://dodosend.com/t/<16-hex-threadId>?account=<email>` (account from `BRIEFS_TODO_REVIEW_ACCOUNT` / the host TOML; omitted if unset or invalid). Incoming `mail.google.com` thread URLs, legacy `dodo-link.pages.dev/t/<hex>` URLs, and `dodosend://thread/<hex>` links are accepted as input and rewritten to that form. There is no Dodosend search URL, so Gmail `#search/` links are left as `mail.google.com` only when no thread id is known.
 
 ---
 

@@ -39,7 +39,7 @@ $M reload             # after editing conf.d
 ## What's watched
 | Service | Liveness | Health → action |
 |---|---|---|
-| tailscaled (userspace; SOCKS :1055, HTTP proxy :1056) | process match | TCP :1055 fails 3 cycles → restart. **tailscale-health** (every 60 s): the local API answers, a `tailscale ping -c 2 --timeout 5s` reaches an always-on peer (<TAILNET-IP>) or vps-primary <TAILNET-IP> (never the Mac alone), and `curl --socks5-hostname localhost:1055 https://grok-bot-box.<tailnet>.ts.net/` returns 200. Restarts only after **4 min of continuous failure**, which covers the 05:00–05:05 ET home-network reboot. Also logs a WARNING if Funnel is ever on |
+| tailscaled (userspace; SOCKS :1055, HTTP proxy :1056) | process match | TCP :1055 fails 3 cycles → restart. **tailscale-health** (every 60 s): the local API answers, a `tailscale ping -c 2 --timeout 5s` reaches an always-on peer (<TAILNET-IP>) or the VPS <TAILNET-IP> (never the Mac alone), and `curl --socks5-hostname localhost:1055 https://grok-bot-box.<tailnet>.ts.net/` returns 200. Restarts only after **4 min of continuous failure**, which covers the 05:00–05:05 ET home-network reboot. Also logs a WARNING if Funnel is ever on |
 | mac-mcp-forwarder (127.0.0.1:18800) | process | `/__fwd_health` fails 2 cycles → restart |
 | dashboard (uvicorn 127.0.0.1:8642) | process | `/healthz` fails 2 cycles → restart (a wedged/SIGSTOPped process is SIGKILLed) |
 | dashboard-tasks | every 5 min | Re-applies `serve --bg --https=443` → 127.0.0.1:8642 if the mapping is missing. **Tailnet-only; never Funnel** |

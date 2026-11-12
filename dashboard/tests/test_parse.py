@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import pytest
 
-from briefs.parse import clean_title, compute_item_key, parse_brief, parse_cos_reqs
+from briefs.parse import clean_title, compute_item_key, extract_links, normalize_url, parse_brief, parse_cos_reqs
 
 
 def test_parse_radar_samples(samples_path: Path) -> None:
@@ -100,3 +100,28 @@ def test_date_only_titles_do_not_collide() -> None:
     a = compute_item_key("", "Sunday Oct 25")
     b = compute_item_key("", "Mon 10/26:")
     assert a != b and a != "h:da39a3ee5e6b"
+
+
+def test_gmail_thread_urls_normalize_to_gmail_keys() -> None:
+    from briefs.parse import rewrite_gmail_link_for_display
+    tid = "1a1037c65622cc27"
+    key = f"gmail:{tid}"
+    account = "user@example.com"
+    canon = f"https://dodosend.com/t/{tid}?account={account}"
+    inputs = [
+        f"https://mail.google.com/mail/u/0/#all/{tid}",
+        canon,
+        f"https://dodo-link.pages.dev/t/{tid}",
+        f"dodosend://thread/{tid}",
+        f"dodosend://thread/{tid}?account={account}",
+    ]
+    for url in inputs:
+        assert normalize_url(url) == key
+        assert compute_item_key(f"1. See [t]({url}) please", "See t please") == key
+        assert rewrite_gmail_link_for_display(url).startswith(f"https://dodosend.com/t/{tid}?account=")
+    assert rewrite_gmail_link_for_display(canon) == canon
+    search = "https://mail.google.com/mail/u/0/#search/from%3Aa%40b.com"
+    assert rewrite_gmail_link_for_display(search) == search
+    extracted = extract_links(f"see [x](dodosend://thread/{tid})")
+    assert extracted[0]["url"] == f"dodosend://thread/{tid}"
+    assert compute_item_key(f"see [x](dodosend://thread/{tid})", "see x") == key

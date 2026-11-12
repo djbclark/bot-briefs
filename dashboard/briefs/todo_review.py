@@ -25,6 +25,12 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 
 from briefs.config import TZ_ET, now_et, state_home
+from briefs.parse import (
+    dodosend_thread_url,
+    is_canonical_dodosend_url,
+    parse_gmail_thread_ref,
+    rewrite_gmail_link_for_display,
+)
 
 # Owner choices for reassignment. Override with BRIEFS_TODO_REVIEW_OWNERS (comma-separated);
 # "Other" is always appended as the fallback bucket.
@@ -61,17 +67,15 @@ SORT_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 _VALID_SORTS = {k for k, _ in SORT_OPTIONS}
 
-# Mail account used for dodosend:// links when a row carries none (set on the host).
-DEFAULT_ACCOUNT = os.environ.get("BRIEFS_TODO_REVIEW_ACCOUNT", "user@example.com")
+# Mail account used for https://dodosend.com/t/ links when a row carries none (host TOML/env).
+def _default_account() -> str:
+    acct = os.environ.get("BRIEFS_TODO_REVIEW_ACCOUNT", "user@example.com").strip()
+    return acct if acct and re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", acct) else ""
+
+DEFAULT_ACCOUNT = _default_account()  # import-time snapshot; prefer _default_account() at call time
 TASK_KEY_RE = re.compile(r"^[A-Za-z0-9:._/-]{1,200}$")
 _HEX16_RE = re.compile(r"^[0-9a-fA-F]{16}$")
-_DODOSEND_SAFE_RE = re.compile(
-    r"^dodosend://thread/([0-9a-fA-F]{16})(?:\?account=([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}))?$"
-)
 _MAILTO_SAFE_RE = re.compile(r"^mailto:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
-_GMAIL_THREAD_FRAG_RE = re.compile(
-    r"^#(all|inbox|sent|drafts|trash|spam|starred|imp|snoozed|scheduled|category/[^/]+|label/[^/]+)/([0-9a-fA-F]{16})$"
-)
 _UNSAFE_URL_CHARS_RE = re.compile(r"[\x00-\x20\x7f<>\"'`]")
 _CTRL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 MAX_NOTE_LEN = 4000
@@ -186,8 +190,11 @@ def clean_text_field(val: Any, max_len: int = MAX_NOTE_LEN) -> str:
 
 
 def is_safe_review_url(url: Any) -> bool:
-    """Strict URL validator for review links: allows https/http/mailto and strict dodosend://thread/<16hex>.
-    Rejects javascript:, data:, vbscript:, file:, protocol-relative //, control chars, and malformed URLs.
+    """Strict URL validator for review links: allows https/http/mailto and
+    https://dodosend.com/t/<exactly 16 hex> with optional account=valid email only.
+    Rejects javascript:, data:, vbscript:, file:, dodosend://, protocol-relative //,
+    control chars, and malformed URLs. Other https hosts (including Gmail search
+    links) remain allowed.
     """
     if not isinstance(url, str):
         return False
@@ -202,7 +209,7 @@ def is_safe_review_url(url: Any) -> bool:
         return False
 
     if compact.startswith("dodosend:"):
-        return bool(_DODOSEND_SAFE_RE.match(u))
+        return False
 
     if compact.startswith("mailto:"):
         return bool(_MAILTO_SAFE_RE.match(u))
@@ -217,6 +224,9 @@ def is_safe_review_url(url: Any) -> bool:
     parsed = urllib.parse.urlsplit(u)
     if parsed.scheme.lower() not in ("https", "http") or not parsed.netloc:
         return False
+    host = (parsed.hostname or "").lower()
+    if host == "dodosend.com":
+        return is_canonical_dodosend_url(u)
     return True
 
 
@@ -238,10 +248,11 @@ def build_email_links(
     thread_lookup: Optional[dict[str, dict[str, Any]]] = None,
 ) -> list[dict[str, Any]]:
     """Build safe email/thread links for a row:
-    - Known 16-hex Gmail thread IDs -> Dodosend primary + Gmail (#all/<tid>) fallback.
-    - Preserves all Gmail #search/... links (especially when actual thread ID is unknown or grouped).
+    - Known 16-hex Gmail thread IDs -> one https://dodosend.com/t/<tid>?account=<email> link.
+    - Preserves Gmail #search/... links only when no thread ID is known (no Dodosend search URL).
     - Preserves safe Shortwave / https links.
-    - Strips any unsafe URL (javascript:, data:, malformed dodosend:, etc.).
+    - Accepts legacy dodosend://, dodo-link.pages.dev, and mail.google.com thread URLs as input.
+    - Strips any unsafe URL (javascript:, data:, dodosend:// output, malformed URLs, etc.).
     """
     extra = row_extra or {}
     t_lookup = thread_lookup or {}
@@ -255,7 +266,7 @@ def build_email_links(
         t = tid_candidate.strip().lower()
         if not _HEX16_RE.match(t) or t in seen_tids:
             return
-        acct = DEFAULT_ACCOUNT
+        acct = _default_account()
         if acct_candidate and re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", acct_candidate):
             acct = acct_candidate
         seen_tids.add(t)
@@ -266,8 +277,8 @@ def build_email_links(
         _add_tid(extra.get("thread_id"))
 
     # 2. Thread lookup from Shortwave migration mapping by shortwave_id
-    for p in provenance:
-        sw_id = p.get("shortwave_id")
+    for prov in provenance:
+        sw_id = prov.get("shortwave_id")
         if isinstance(sw_id, str) and sw_id in t_lookup:
             entry = t_lookup[sw_id]
             _add_tid(entry.get("thread_id"))
@@ -286,71 +297,48 @@ def build_email_links(
             lbl = item.get("label") if isinstance(item.get("label"), str) else None
             candidate_urls.append((item["url"].strip(), lbl))
 
-    # 3. Extract any 16-hex thread IDs present in safe dodosend:// or direct Gmail thread URLs
+    # 3. Extract any 16-hex thread IDs present in accepted input URL forms
     for raw_u, _ in candidate_urls:
-        if not is_safe_review_url(raw_u):
-            continue
-        dm = _DODOSEND_SAFE_RE.match(raw_u)
-        if dm:
-            _add_tid(dm.group(1), dm.group(2))
-            continue
-        parsed = urllib.parse.urlsplit(raw_u)
-        if "mail.google.com" in parsed.netloc.lower():
-            gm = _GMAIL_THREAD_FRAG_RE.match(parsed.fragment)
-            if gm:
-                _add_tid(gm.group(2))
+        ref = parse_gmail_thread_ref(raw_u)
+        if ref:
+            _add_tid(ref[0], ref[1])
 
     out: list[dict[str, Any]] = []
     emitted_urls: set[str] = set()
 
-    # Emit Dodosend + Gmail fallback pairs for every known 16-hex thread ID
+    # Emit one canonical Dodosend https link for every known 16-hex thread ID
     multi_tid = len(known_threads) > 1
     for idx, (tid, acct) in enumerate(known_threads, start=1):
         suffix = f" {idx}" if multi_tid else ""
-        dodo_url = f"dodosend://thread/{tid}?account={acct}"
-        gmail_url = f"https://mail.google.com/mail/u/0/#all/{tid}"
+        dodo_url = dodosend_thread_url(tid, acct)
         out.append({
             "kind": "dodosend",
             "label": f"Dodosend{suffix}",
             "url": dodo_url,
-            "external": False,
+            "external": True,
             "tooltip": f"Open thread {tid} in Dodosend",
         })
-        out.append({
-            "kind": "gmail",
-            "label": f"Gmail{suffix}",
-            "url": gmail_url,
-            "external": True,
-            "tooltip": f"Open thread {tid} in Gmail (fallback)",
-        })
         emitted_urls.add(dodo_url)
-        emitted_urls.add(f"dodosend://thread/{tid}")
-        emitted_urls.add(gmail_url)
 
-    # Preserve Gmail search links, Shortwave links, and any other safe links
+    # Preserve Gmail search links (only if no thread id is known), Shortwave, other safe links
     search_links: list[tuple[str, Optional[str]]] = []
     shortwave_links: list[tuple[str, Optional[str]]] = []
     other_links: list[tuple[str, Optional[str]]] = []
 
     for raw_u, custom_lbl in candidate_urls:
+        ref = parse_gmail_thread_ref(raw_u)
+        if ref and ref[0] in seen_tids:
+            continue
         if not is_safe_review_url(raw_u):
             continue
         if raw_u in emitted_urls:
             continue
-        # Skip direct thread links whose tid was already emitted above
-        dm = _DODOSEND_SAFE_RE.match(raw_u)
-        if dm and dm.group(1).lower() in seen_tids:
-            continue
         parsed = urllib.parse.urlsplit(raw_u)
         host = parsed.netloc.lower()
-        if "mail.google.com" in host:
-            gm = _GMAIL_THREAD_FRAG_RE.match(parsed.fragment)
-            if gm and gm.group(2).lower() in seen_tids:
-                continue
-            if parsed.fragment.startswith("search/"):
-                search_links.append((raw_u, custom_lbl))
-                emitted_urls.add(raw_u)
-                continue
+        if "mail.google.com" in host and parsed.fragment.startswith("search/"):
+            search_links.append((raw_u, custom_lbl))
+            emitted_urls.add(raw_u)
+            continue
         if "shortwave.com" in host:
             shortwave_links.append((raw_u, custom_lbl))
             emitted_urls.add(raw_u)
@@ -358,15 +346,17 @@ def build_email_links(
         other_links.append((raw_u, custom_lbl))
         emitted_urls.add(raw_u)
 
-    multi_search = len(search_links) > 1
-    for idx, (u, lbl) in enumerate(search_links, start=1):
-        out.append({
-            "kind": "gmail-search",
-            "label": lbl or (f"Gmail search {idx}" if multi_search else "Gmail search"),
-            "url": u,
-            "external": True,
-            "tooltip": _decode_gmail_search_hint(u),
-        })
+    # No Dodosend search URL form is known; keep Gmail search only when no thread id exists.
+    if not known_threads:
+        multi_search = len(search_links) > 1
+        for idx, (u, lbl) in enumerate(search_links, start=1):
+            out.append({
+                "kind": "gmail-search",
+                "label": lbl or (f"Gmail search {idx}" if multi_search else "Gmail search"),
+                "url": u,
+                "external": True,
+                "tooltip": _decode_gmail_search_hint(u),
+            })
 
     multi_sw = len(shortwave_links) > 1
     for idx, (u, lbl) in enumerate(shortwave_links, start=1):
@@ -383,7 +373,7 @@ def build_email_links(
             "kind": "link",
             "label": lbl or (f"Link {idx}" if len(other_links) > 1 else "Link"),
             "url": u,
-            "external": not u.lower().startswith("dodosend:"),
+            "external": True,
             "tooltip": u,
         })
 
@@ -495,8 +485,12 @@ def deduplicate_candidates(
                 sw_by_title[nt] = key
             for lk in r.get("links") or []:
                 lk_s = lk if isinstance(lk, str) else (lk.get("url") if isinstance(lk, dict) else "")
-                if isinstance(lk_s, str) and "mail.google.com" in lk_s and lk_s not in sw_by_gmail_link:
-                    sw_by_gmail_link[lk_s] = key
+                if not isinstance(lk_s, str) or not lk_s:
+                    continue
+                ref = parse_gmail_thread_ref(lk_s)
+                dedup_k = f"gmail:{ref[0]}" if ref else (lk_s if "mail.google.com" in lk_s else None)
+                if dedup_k and dedup_k not in sw_by_gmail_link:
+                    sw_by_gmail_link[dedup_k] = key
 
     for key, r, prov in prepared:
         target_key = key
@@ -507,8 +501,11 @@ def deduplicate_candidates(
             else:
                 for lk in r.get("links") or []:
                     lk_s = lk if isinstance(lk, str) else (lk.get("url") if isinstance(lk, dict) else "")
-                    if isinstance(lk_s, str) and lk_s in sw_by_gmail_link:
-                        target_key = sw_by_gmail_link[lk_s]
+                    if isinstance(lk_s, str) and lk_s:
+                        ref = parse_gmail_thread_ref(lk_s)
+                        dedup_k = f"gmail:{ref[0]}" if ref else lk_s
+                        if dedup_k in sw_by_gmail_link:
+                            target_key = sw_by_gmail_link[dedup_k]
                         break
 
         title = _CTRL_CHARS_RE.sub("", str(r.get("title") or "Untitled")).strip() or "Untitled"
@@ -737,6 +734,53 @@ def _dom_id_for_key(task_key: str) -> str:
     return hashlib.sha256(task_key.encode("utf-8")).hexdigest()[:12]
 
 
+def _refresh_stored_review_links(raw_links: Any) -> list[dict[str, Any]]:
+    """Rewrite legacy thread URLs, drop Gmail fallbacks, and keep search only if no thread id."""
+    if not isinstance(raw_links, list):
+        return []
+    known: list[tuple[str, str, Optional[str]]] = []  # tid, account, label
+    seen: set[str] = set()
+    rest: list[dict[str, Any]] = []
+    search: list[dict[str, Any]] = []
+    for lk in raw_links:
+        if not isinstance(lk, dict) or not isinstance(lk.get("url"), str):
+            continue
+        url = lk["url"].strip()
+        ref = parse_gmail_thread_ref(url)
+        if ref:
+            tid, acct = ref
+            if tid in seen:
+                continue
+            seen.add(tid)
+            lbl = lk.get("label") if isinstance(lk.get("label"), str) else None
+            known.append((tid, acct or _default_account(), lbl))
+            continue
+        if not is_safe_review_url(url):
+            continue
+        parsed = urllib.parse.urlsplit(url)
+        item = dict(lk)
+        item["url"] = url
+        if "mail.google.com" in parsed.netloc.lower() and parsed.fragment.startswith("search/"):
+            search.append(item)
+        else:
+            rest.append(item)
+    out: list[dict[str, Any]] = []
+    multi = len(known) > 1
+    for idx, (tid, acct, lbl) in enumerate(known, start=1):
+        suffix = f" {idx}" if multi else ""
+        out.append({
+            "kind": "dodosend",
+            "label": lbl or f"Dodosend{suffix}",
+            "url": dodosend_thread_url(tid, acct),
+            "external": True,
+            "tooltip": f"Open thread {tid} in Dodosend",
+        })
+    if not known:
+        out.extend(search)
+    out.extend(rest)
+    return out
+
+
 def _hydrate_row(db_row: Any, ref_now: datetime, audit_count: int = 0) -> dict[str, Any]:
     d = dict(db_row)
     task_key = d["task_key"]
@@ -748,11 +792,8 @@ def _hydrate_row(db_row: Any, ref_now: datetime, audit_count: int = 0) -> dict[s
         raw_links = json.loads(d.get("links_json") or "[]")
     except Exception:
         raw_links = []
-    # Re-verify URL safety on read as defense-in-depth
-    safe_links = [
-        lk for lk in raw_links
-        if isinstance(lk, dict) and is_safe_review_url(lk.get("url"))
-    ]
+    # Re-verify and rewrite legacy thread URLs on read as defense-in-depth
+    safe_links = _refresh_stored_review_links(raw_links)
 
     try:
         prov = json.loads(d.get("provenance_json") or "[]")
@@ -1101,8 +1142,11 @@ def apply_decision(
 
 
 def todo_safe_url(url: Any) -> str:
-    """Render-time href guard (the template's safe_url step): is_safe_review_url or "#"."""
-    return url.strip() if is_safe_review_url(url) else "#"
+    """Render-time href guard: rewrite known thread URLs, then is_safe_review_url or "#"."""
+    if not isinstance(url, str):
+        return "#"
+    rewritten = rewrite_gmail_link_for_display(url.strip())
+    return rewritten if is_safe_review_url(rewritten) else "#"
 
 
 def register(

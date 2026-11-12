@@ -1,5 +1,7 @@
 # Coding bot: box coding / TUI setup (paths only, no secrets)
 
+> **Routing rule (operator, 2026-11-11):** do all AI work with the box's own assistant bot. acp-run agents (agy, Claude, cursor, cline, Codex) are fallback only, when the chief-of-staff bot says the bot's usage is over pace. Token-saving scan timing still applies.
+
 Collected 2026-10-14 from the box (Project Bot / One-offs work). Coding bot agent id <AGENT_ID>.
 
 ## 1. acp-run (drive any coding agent headless over ACP)
@@ -7,7 +9,7 @@ Collected 2026-10-14 from the box (Project Bot / One-offs work). Coding bot agen
 - Usage: `acp-run --list`, `acp-run <agent> --info`, `acp-run <agent> -C <cwd> -p '...' [--model M] [--perm all|deny|scoped:P] [--timeout S]`, interactive `-i [--inbox DIR] [--resume ID]`.
 - Logs: ~/.local/state/acp-run/ (JSONL per run). Exit codes in README (0 ok, 1 fail/delivery check, 124 timeout, 75 load guard).
 - Box-specific tables at top of the script: AGENTS, DEFAULT_SET, YOLO_MODE/YOLO_SET/YOLO_CMD, CLIENT_NAME, GLOBAL_RULES, HANDSHAKE_TIMEOUT. Yolo is the default for all agents (operator 2026-10-03).
-- Defaults: claude = sonnet, effort high; cline = provider cline-pass, model cline-pass/deepseek-v4.1-flash. Policy: agy by default, Claude only for complex coding/reviews.
+- Defaults: claude = sonnet, effort high; cline = provider cline-pass, model cline-pass/deepseek-v4.1-flash. Policy (superseded 2026-11-11): the operator now wants all AI work, coding and reviews included, done by the box's own assistant bot; do not offload to agy, Claude, Codex or other acp-run agents unless the chief-of-staff bot reports the bot's usage is over pace. acp-run stays installed for replying to agents that message the bot and for over-pace fallback.
 
 ## 2. agy via refined-antigravity-acp (zed clientInfo)
 - `acp-run agy` launches ~/.local/bin/refined-antigravity-acp (override env ACP_RUN_AGY_CMD) -> node22 at ~/.local/opt/node22, package ~/.local/opt/raacp/.../@simonepri/refined-antigravity-acp. Official .par crashes on the box (no nobody group).

@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any, Optional
-from urllib.parse import urlparse
+import os
+from urllib.parse import parse_qs, urlparse, urlsplit
 
 MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -11,7 +12,100 @@ MONTHS = {
 }
 
 
+
 _SAFE_SCHEMES = ("http", "https", "mailto")
+
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+_HEX16_RE = re.compile(r"^[0-9a-fA-F]{16}$")
+_DODOSEND_SCHEME_RE = re.compile(
+    r"^dodosend://thread/([0-9a-fA-F]{16})(?:\?account=([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}))?$"
+)
+_CANONICAL_DODOSEND_RE = re.compile(
+    r"^https://dodosend\.com/t/([0-9a-fA-F]{16})(?:\?account=([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}))?$"
+)
+_GMAIL_THREAD_FRAG_RE = re.compile(
+    r"^(all|inbox|sent|drafts|trash|spam|starred|imp|snoozed|scheduled|category/[^/]+|label/[^/]+)/([0-9a-fA-F]{16})$"
+)
+_DODOSEND_MD_RE = re.compile(
+    r"dodosend://thread/[0-9a-fA-F]{16}(?:\?account=[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?"
+)
+
+
+def _default_gmail_account() -> str | None:
+    """Account for canonical Dodosend links; from BRIEFS_TODO_REVIEW_ACCOUNT (host TOML/env)."""
+    acct = os.environ.get("BRIEFS_TODO_REVIEW_ACCOUNT", "user@example.com").strip()
+    if acct and _EMAIL_RE.match(acct):
+        return acct
+    return None
+
+
+def _account_from_query(query: str) -> str | None:
+    vals = (parse_qs(query, keep_blank_values=True).get("account") or [])
+    if vals and _EMAIL_RE.match(vals[0]):
+        return vals[0]
+    return None
+
+
+def parse_gmail_thread_ref(url: Any) -> tuple[str, str | None] | None:
+    """Extract (thread_id, account_or_None) from accepted Gmail/Dodosend URL forms.
+
+    Inputs: https://dodosend.com/t/<16hex>?account=..., legacy
+    https://dodo-link.pages.dev/t/<16hex>, dodosend://thread/<16hex>, and
+    mail.google.com thread URLs. Search URLs are not thread refs.
+    """
+    if not isinstance(url, str):
+        return None
+    u = url.strip()
+    if not u:
+        return None
+    m = _DODOSEND_SCHEME_RE.match(u)
+    if m:
+        return m.group(1).lower(), m.group(2)
+    parsed = urlsplit(u)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme.lower() == "https" and host in {"dodosend.com", "dodo-link.pages.dev"}:
+        pm = re.fullmatch(r"/t/([0-9a-fA-F]{16})", parsed.path)
+        if pm:
+            return pm.group(1).lower(), _account_from_query(parsed.query)
+        return None
+    if "mail.google.com" in host:
+        gm = _GMAIL_THREAD_FRAG_RE.match(parsed.fragment)
+        if gm:
+            return gm.group(2).lower(), None
+        tf = re.search(r"thread-f:(\d+)", u)
+        if tf:
+            return format(int(tf.group(1)), "x"), None
+    return None
+
+
+def dodosend_thread_url(tid: str, account: str | None = None) -> str:
+    """Canonical thread link: https://dodosend.com/t/<16hex> with optional ?account=<email>."""
+    t = tid.strip().lower()
+    if not _HEX16_RE.match(t):
+        raise ValueError(f"invalid Gmail thread id: {tid!r}")
+    acct = account if (account and _EMAIL_RE.match(account)) else _default_gmail_account()
+    if acct:
+        return f"https://dodosend.com/t/{t}?account={acct}"
+    return f"https://dodosend.com/t/{t}"
+
+
+def is_canonical_dodosend_url(url: Any) -> bool:
+    """True only for https://dodosend.com/t/<exactly 16 hex> with optional account=email."""
+    if not isinstance(url, str):
+        return False
+    return bool(_CANONICAL_DODOSEND_RE.match(url.strip()))
+
+
+def rewrite_gmail_link_for_display(url: Any) -> str:
+    """Rewrite a known thread URL to the canonical Dodosend https form; otherwise return as-is."""
+    if not isinstance(url, str):
+        return url
+    u = url.strip()
+    ref = parse_gmail_thread_ref(u)
+    if not ref:
+        return u
+    tid, acct = ref
+    return dodosend_thread_url(tid, acct)
 
 
 def is_safe_url(url: Any) -> bool:
@@ -32,14 +126,22 @@ def is_safe_url(url: Any) -> bool:
 
 
 def safe_url(url: Any, fallback: str = "#") -> str:
-    return url.strip() if is_safe_url(url) else fallback
+    if not isinstance(url, str):
+        return fallback
+    rewritten = rewrite_gmail_link_for_display(url.strip())
+    return rewritten if is_safe_url(rewritten) else fallback
 
 
 def filter_safe_links(links: Any) -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     for l in links or []:
-        if isinstance(l, dict) and is_safe_url(l.get("url")):
-            out.append(l)
+        if not isinstance(l, dict) or not isinstance(l.get("url"), str):
+            continue
+        rewritten = rewrite_gmail_link_for_display(l["url"].strip())
+        if is_safe_url(rewritten):
+            item = dict(l)
+            item["url"] = rewritten
+            out.append(item)
     return out
 
 
@@ -48,8 +150,8 @@ def extract_links(text: str) -> list[dict[str, str]]:
     links: list[dict[str, str]] = []
     seen_urls: set[str] = set()
 
-    # Markdown links: [label](url)
-    md_matches = re.findall(r"\[([^\]]+)\]\((https?://[^\)]+)\)", text)
+    # Markdown links: [label](url) — http(s) and dodosend://thread/...
+    md_matches = re.findall(r"\[([^\]]+)\]\((https?://[^\)]+|dodosend://thread/[0-9a-fA-F]{16}(?:\?account=[^\)\s]+)?)\)", text)
     for label, url in md_matches:
         u = url.strip()
         if u not in seen_urls:
@@ -58,22 +160,30 @@ def extract_links(text: str) -> list[dict[str, str]]:
 
     # Bare URLs
     # Strip markdown link targets to avoid double-counting
-    stripped = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", "", text)
+    stripped = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+|dodosend://thread/[0-9a-fA-F]{16}(?:\?account=[^\)\s]+)?)\)", "", text)
     bare_matches = re.findall(r"https?://[^\s\)\"',;]+", stripped)
     for u in bare_matches:
         u_clean = u.rstrip(".,;:!?'\")")
         if u_clean and u_clean not in seen_urls:
             links.append({"label": u_clean, "url": u_clean})
             seen_urls.add(u_clean)
+    for u in _DODOSEND_MD_RE.findall(stripped):
+        if u not in seen_urls:
+            links.append({"label": u, "url": u})
+            seen_urls.add(u)
 
     return links
 
 
 def normalize_url(url: str) -> str:
     """Normalize a URL to produce a canonical representation for item keys."""
+    ref = parse_gmail_thread_ref(url)
+    if ref:
+        return f"gmail:{ref[0]}"
+
     parsed = urlparse(url)
 
-    # mail.google.com -> extract 16-hex thread id if present
+    # mail.google.com -> extract 16-hex thread id if present (legacy / odd shapes)
     if "mail.google.com" in parsed.netloc:
         m = re.search(r"([0-9a-fA-F]{16})", url)
         if m:
@@ -154,8 +264,17 @@ def compute_item_key(item_text: str, title: str) -> str:
     links = extract_links(item_text)
     source_links = [l["url"] for l in links if "docs.google.com/spreadsheets" not in l["url"]]
 
-    # 1) Preferred hosts
-    preferred_hosts = ["mail.google.com", "github.com", "forgejo", "atlassian.net", "gerrit"]
+    # 1) Any recognized Gmail/Dodosend thread URL -> gmail:<id>
+    for u in source_links:
+        ref = parse_gmail_thread_ref(u)
+        if ref:
+            return f"gmail:{ref[0]}"
+
+    # 1b) Preferred hosts
+    preferred_hosts = [
+        "mail.google.com", "dodosend.com", "dodo-link.pages.dev",
+        "github.com", "forgejo", "atlassian.net", "gerrit",
+    ]
     chosen_url = None
     for host in preferred_hosts:
         for u in source_links:

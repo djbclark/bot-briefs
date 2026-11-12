@@ -51,7 +51,7 @@ from briefs.config import (
 )
 from briefs import syncapi
 from briefs.db import connect, init_schema
-from briefs.parse import safe_url
+from briefs.parse import rewrite_gmail_link_for_display, safe_url
 from briefs.store import (
     distinct_areas,
     get_item,
@@ -84,6 +84,9 @@ md_engine = MarkdownIt("commonmark", {"html": False}).enable("table")
 def _render_link_open(self: Any, tokens: Any, idx: int, options: Any, env: Any) -> str:
     tokens[idx].attrs["target"] = "_blank"
     tokens[idx].attrs["rel"] = "noopener"
+    href = tokens[idx].attrGet("href")
+    if href:
+        tokens[idx].attrs["href"] = rewrite_gmail_link_for_display(href)
     return self.renderToken(tokens, idx, options, env)
 
 

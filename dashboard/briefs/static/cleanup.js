@@ -150,6 +150,8 @@
   function unsubEntry(sender, name, u) {
     u = u || {};
     var method = u.one_click ? "one-click" : (u.url ? "web" : (u.mailto ? "mailto" : "none"));
+    // No Dodosend search URL form is known, and this helper has no thread id,
+    // so leave the Gmail search link as mail.google.com.
     return { source: sender, name: name, method: method, url: u.url || null, mailto: u.mailto || null, auto_allowed: !!u.one_click,
              gmail_search: "https://mail.google.com/mail/u/0/#search/" + encodeURIComponent("from:" + sender) };
   }

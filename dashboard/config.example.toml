@@ -30,7 +30,7 @@ allowed_hosts = [
 # Optional local-only TODO review page (/todo-review). Decisions stay in local SQLite tables.
 # [todo_review]
 # owners = ["Chess", "Coding", "Money", "Family", "Radar", "Zero"]   # "Other" is always added
-# account = "user@example.com"            # default account for dodosend:// thread links
+# account = "user@example.com"            # default account for https://dodosend.com/t/<hex> thread links
 # export_dir = "/var/lib/briefs/todo-review"  # holds todo-review-candidates.json (+ shortwave-thread-map.json)
 
 [[bots]]

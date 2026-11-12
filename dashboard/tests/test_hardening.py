@@ -94,3 +94,18 @@ def test_templates_filter_external_hrefs():
             if "safe_url" not in m.group(1):
                 bad.append(f"{p.name}: {m.group(1)}")
     assert not bad, bad
+
+
+def test_safe_url_rewrites_gmail_thread_links():
+    tid = "0123456789abcdef"
+    canon = f"https://dodosend.com/t/{tid}?account=user@example.com"
+    assert safe_url(f"https://mail.google.com/mail/u/0/#all/{tid}") == canon
+    assert safe_url(f"dodosend://thread/{tid}") == canon
+    assert not is_safe_url(f"dodosend://thread/{tid}")
+    assert is_safe_url(f"https://mail.google.com/mail/u/0/#all/{tid}")
+    search = "https://mail.google.com/mail/u/0/#search/from%3Aa%40b.com"
+    assert safe_url(search) == search
+    from briefs.web import render_markdown
+    html = render_markdown(f"see [t](https://mail.google.com/mail/u/0/#all/{tid})")
+    assert canon in html
+    assert "mail.google.com" not in html

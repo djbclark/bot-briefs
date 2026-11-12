@@ -7,12 +7,18 @@ key ties an item across days (items table is unique on bot_id+item_key; last_see
 Keys: gmail:<threadHex> | github PR/issue URL | h:<sha1(first 8 normalized words)[:12]>.
 Usage: report-to-items report.md [-o FILE] [--year YYYY] | report-to-items --selftest
 """
-import hashlib, json, re, sys, argparse, datetime
+import hashlib, json, os, re, sys, argparse, datetime
 
-LINK = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
+LINK = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+|dodosend://thread/[0-9a-fA-F]{16}(?:\?account=[^)\s]+)?)\)")
 MONTHS = {m: i + 1 for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split())}
 
 def gmail_thread(url):
+    m = re.match(r"dodosend://thread/([0-9a-fA-F]{16})(?:\?|$)", url)
+    if m:
+        return m.group(1).lower()
+    m = re.search(r"https://(?:dodosend\.com|dodo-link\.pages\.dev)/t/([0-9a-fA-F]{16})(?:\?|$|#)", url)
+    if m:
+        return m.group(1).lower()
     if "mail.google.com" not in url:
         return None
     m = re.search(r"thread-f:(\d+)", url)
@@ -20,6 +26,22 @@ def gmail_thread(url):
         return format(int(m.group(1)), "x")
     m = re.search(r"#[a-z]+(?:/[^/?#]+)?/([0-9a-fA-F]{16})\b", url)
     return m.group(1).lower() if m else None
+
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+_ACCOUNT_RE = re.compile(r"[?&]account=([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+
+def default_account():
+    # Same setting the dashboard uses (host TOML/env); invalid or empty -> no account param.
+    a = os.environ.get("BRIEFS_TODO_REVIEW_ACCOUNT", "user@example.com").strip()
+    return a if _EMAIL_RE.match(a) else None
+
+def dodosend_url(tid, account=None):
+    acct = account or default_account()
+    return f"https://dodosend.com/t/{tid}?account={acct}" if acct else f"https://dodosend.com/t/{tid}"
+
+def account_from(url):
+    m = _ACCOUNT_RE.search(url)
+    return m.group(1) if m else None
 
 def github_key(url):
     m = re.match(r"https?://github\.com/([^/]+/[^/]+)/(pull|issues)/(\d+)", url)
@@ -75,7 +97,9 @@ def parse(md, year=None):
         for l in r["links"]:
             t = gmail_thread(l["url"])
             if t:
-                key = f"gmail:{t}"; break
+                l["url"] = dodosend_url(t, account_from(l["url"]))
+                if not key:
+                    key = f"gmail:{t}"
         if not key:
             for l in r["links"]:
                 key = github_key(l["url"])
@@ -120,6 +144,23 @@ weird line
     assert "weird line" in r[2]["details"]
     assert r[4]["key"] == "gmail:" + format(81985529216486895, "x")
     assert r[6]["key"] == r[5]["key"] + "#2.3"
+    acct = default_account()
+    canon = "https://dodosend.com/t/0123456789abcdef" + (f"?account={acct}" if acct else "")
+    assert r[0]["links"][0]["url"] == canon, r[0]["links"]
+    sample2 = """**Most urgent:** see [Dodo](https://dodosend.com/t/1a1037c65622cc27?account=other@example.com)
+
+**1. Today**
+
+1.1 legacy [d](https://dodo-link.pages.dev/t/0123456789abcdef)
+1.2 scheme [s](dodosend://thread/fedcba9876543210)
+"""
+    r2 = parse(sample2, 2026)
+    assert r2[0]["key"] == "gmail:1a1037c65622cc27"
+    assert r2[0]["links"][0]["url"] == "https://dodosend.com/t/1a1037c65622cc27?account=other@example.com"
+    assert r2[2]["key"] == "gmail:0123456789abcdef"
+    assert r2[2]["links"][0]["url"] == canon
+    assert r2[3]["key"] == "gmail:fedcba9876543210"
+    assert r2[3]["links"][0]["url"] == canon.replace("0123456789abcdef", "fedcba9876543210")
     assert parse(sample, 2026) == r and parse("", 2026) == [] and parse("junk\n**x", 2026) == []
     import os
     p = "/workspace/report-1029.md"
