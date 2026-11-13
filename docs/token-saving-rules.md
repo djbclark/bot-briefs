@@ -13,16 +13,20 @@ A script that checks deterministically and wakes a bot only on change (monit + `
 costs no model tokens until it fires, so its frequency is not a budget question. See
 [shared-docs/zero-token-pollers.md](../shared-docs/zero-token-pollers.md).
 
-## 3. Coding work goes to installed coding agents over ACP
-Send coding work to the coding TUIs installed on the box through `acp-run` (see
-[local-bin/acp-run.README.md](../local-bin/acp-run.README.md)), in a preference order you write down
-(for example: your main subscription agent first, then a second vendor, then a cheaper or local option).
-For each task, choose deliberately:
+## 3. Do AI work with the box's own assistant; other vendors are an over-pace fallback
+Do all AI work, coding and reviews included, with the box's own assistant bot on its subscription plan. Do not
+route work to other vendors' coding TUIs or APIs (via `acp-run` or otherwise) just because they are installed.
+The one exception: the chief-of-staff bot watches the assistant's plan usage against its pace for the billing
+period, and when it reports usage is over pace it tells the bots that offloading is allowed until further notice.
+Keep `acp-run` (see [local-bin/acp-run.README.md](../local-bin/acp-run.README.md)) installed for that fallback and
+for replying to agents that message the bot.
+
+When the fallback is in effect, choose deliberately for each task:
 - **vendor and model** (match the task; do not default to the most expensive),
 - **effort / reasoning level**,
 - **context window** (large repos need it; small fixes do not).
 
-After the run, **verify from the agent's logs which model actually ran**. Agents can silently fall back to a
+After a fallback run, **verify from the agent's logs which model actually ran**. Agents can silently fall back to a
 different model when a quota is hit or a flag is ignored. Record the vendor, model, and effort in the report.
 
 Some vendors serve overlapping models (the same model family through more than one subscription or API). Count

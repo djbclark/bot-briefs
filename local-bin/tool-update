@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # tool-update: keep listed uv tools at the latest PyPI release; smoke-test; roll back on failure.
-# Staging (L-6): a release must be at least TOOL_UPDATE_MIN_AGE_DAYS old (default 3) before it is installed,
+# Staging (L-6): a release must be at least TOOL_UPDATE_MIN_AGE_DAYS old (default 1, i.e. 24 hours) before it is installed,
 # so a hijacked/yanked release has time to be caught. A list line "name==X.Y" pins that tool (never upgraded).
 set -uo pipefail
 LIST="$HOME/.config/repo-sync/uv-tools.txt"
-MIN_AGE_DAYS=${TOOL_UPDATE_MIN_AGE_DAYS:-3}
+MIN_AGE_DAYS=${TOOL_UPDATE_MIN_AGE_DAYS:-1}
 while read -r t; do
   [ -z "$t" ] || [[ "$t" == \#* ]] && continue
   if [[ "$t" == *==* ]]; then echo "TOOL ${t%%==*}: PINNED ${t#*==}"; continue; fi

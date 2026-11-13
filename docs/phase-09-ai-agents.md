@@ -11,6 +11,10 @@
 5. Run the Verify section and report results honestly.
 6. Record progress (PROGRESS.md + memory) and wait for the user before the next phase.
 
+> **Routing rule (2026-11-11):** the operator's system does all AI work, coding included, with the box's own assistant bot.
+> acp-run agents are a fallback only, used when the chief-of-staff bot reports the assistant's usage is over pace
+> (see [token-saving-rules.md](token-saving-rules.md) rule 3). Install acp-run anyway so that fallback is ready.
+
 ## Guide (from the operator's working system)
 
 ```text

@@ -19,6 +19,29 @@ How bots format list posts to the user in chat.
 > ***b.*** Domain renewal, $15, due Fri.
 ```
 
+## Sections: Roman numerals, numbered items
+Every line item must be unambiguously referable. When a post has more than one section (for example findings
+plus decisions), label each section with a Roman numeral and restart the item numbers inside it, so the user can
+reply "I.2 yes" or "II.1a":
+
+```markdown
+**I. Findings**
+
+***1.*** Backup ran clean.
+
+***2.*** Two certificates expire this month.
+> ***a.*** Web front end, 9 days.
+>
+> ***b.*** Mail relay, 21 days.
+
+**II. Decisions needed**
+
+***1.*** Renew both certificates now? (yes / later)
+```
+
+A single-section post skips the Roman numerals. The post still ends with one `Ref:` line
+([phase-15-rules.md](phase-15-rules.md) rule 1).
+
 ## Why
 Markdown does not treat `a.` as a list marker, so consecutive `a. ...` / `b. ...` lines merge into one
 paragraph. The quote block indents the sub-items, and the lone `>` line keeps each one on its own line.

@@ -28,11 +28,21 @@
 10. Auto-review: if the classifier ERRORS, run the exact command via agy; never reshape commands to evade a real block.
 11. Shared script changes: keep .bak-<date> copies and note them in shared/*.md.
 12. Tailscale Serve only; never Funnel for anything on the box.
+13. AI work: do it with the box's own assistant bot; other vendors' agents/APIs only when the CoS says usage is over pace
+    (see token-saving-rules.md rule 3).
+14. Stalled UI steps: if any single web UI / browser-automation step takes more than 3 minutes, stop, tell the user
+    what is stuck, and offer them control of the box desktop; afterwards look at what they did and learn from it.
+15. Sign-ins: when a sign-in page offers "Sign in with Google" (or the box's other existing SSO session), click it
+    first; hand over to the user only if the provider then asks for a password, 2FA or other input.
+16. Mail thread links: link threads with the user's chosen mail client's official https thread URL (built from the
+    connector's thread id); no webmail fallback links.
+17. Chat posts: bold-italic item numbers, quote-block sub-items, Roman-numeral sections when there is more than one
+    (chat-format.md), Ref line last.
 ```
 
 ## Token-saving and chat-format rules
 
-Also offer these: [token-saving-rules.md](token-saving-rules.md) (scans only a few hours before the brief, zero-token pollers, coding work to ACP agents with a verified model, GUI work to the computer-use agent) and [chat-format.md](chat-format.md) (`***1.***` items, `> ***a.***` sub-items; dashboard files keep `**1. Title**` / `1.1`).
+Also offer these: [token-saving-rules.md](token-saving-rules.md) (scans only a few hours before the brief, zero-token pollers, AI work with the box's own assistant and other vendors only as an over-pace fallback, GUI work to the computer-use agent) and [chat-format.md](chat-format.md) (`***1.***` items, `> ***a.***` sub-items, `**I.**` / `**II.**` sections; dashboard files keep `**1. Title**` / `1.1`).
 
 ## Verify
 
