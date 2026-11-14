@@ -111,10 +111,17 @@ def test_safe_url_rewrites_legacy_thread_links_and_keeps_gmail_web():
     assert safe_url(search) == search
     from briefs.web import render_markdown
     html = render_markdown(
-        f"Mom email [🍎]({dodo}) [🤖]({gmail})"
+        f"Reply to Mom [🍎]({dodo}) [🤖]({gmail})"
     )
     assert dodo in html and gmail in html
     assert "🍎" in html and "🤖" in html
+    assert ">Gmail<" not in html and ">Dodosend<" not in html
+    html_dot = render_markdown(
+        f"Reply to Mom [·]({dodo}) [·]({gmail})"
+    )
+    assert dodo in html_dot and gmail in html_dot
+    assert "·" in html_dot
+    assert ">Gmail<" not in html_dot and ">Dodosend<" not in html_dot
     html_legacy = render_markdown(f"see [t](https://mail.google.com/mail/u/0/#all/{tid})")
     assert gmail in html_legacy
     assert "dodosend.com" not in html_legacy

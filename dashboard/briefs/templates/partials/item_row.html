@@ -11,7 +11,7 @@
     {% if item.links %}
       <span class="row-links">
         {% for l in item.links %}
-          <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener" class="row-link-icon" title="{{ l.label or l.url }}">{% if l.label in ("🍎", "🤖") %}{{ l.label }}{% else %}🔗{% endif %}</a>
+          <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener" class="row-link-icon" title="{{ l.label or l.url }}">{% if l.label in ("🍎", "🤖", "·") %}{{ l.label }}{% else %}🔗{% endif %}</a>
         {% endfor %}
       </span>
     {% endif %}

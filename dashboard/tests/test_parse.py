@@ -145,6 +145,22 @@ def test_gmail_thread_urls_normalize_to_gmail_keys() -> None:
     assert pair2[0]["url"] == f"https://dodosend.com/t/{tid}?account=other@example.com"
     assert pair2[1]["url"] == f"https://mail.google.com/mail/u/other@example.com/#all/{tid}"
     title = clean_title(
-        f"Mom email [🍎]({canon}) [🤖]({gmail_canon}) needs a reply"
+        f"Reply to Mom [🍎]({canon}) [🤖]({gmail_canon}) needs a reply"
     )
-    assert title == "Mom email needs a reply"
+    assert title == "Reply to Mom needs a reply"
+    title_dot = clean_title(
+        f"Reply to Mom [·]({canon}) [·]({gmail_canon}) needs a reply"
+    )
+    assert title_dot == "Reply to Mom needs a reply"
+    pair_dot = ensure_email_link_pair(
+        [{"label": "·", "url": canon}, {"label": "·", "url": gmail_canon}],
+        key,
+    )
+    assert [l["label"] for l in pair_dot] == ["·", "·"]
+    assert [l["url"] for l in pair_dot] == [canon, gmail_canon]
+    pair_words = ensure_email_link_pair(
+        [{"label": "Dodosend", "url": canon}, {"label": "Gmail", "url": gmail_canon}],
+        key,
+    )
+    assert [l["label"] for l in pair_words] == ["🍎", "🤖"]
+    assert "Gmail" not in str(pair_words) and "Dodosend" not in str(pair_words) and "email" not in str(pair_words).lower()

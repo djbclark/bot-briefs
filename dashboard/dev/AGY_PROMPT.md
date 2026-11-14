@@ -84,7 +84,10 @@ FTS5: reports_fts(title, body_md, content='reports', content_rowid='id') and ite
      [🍎](https://dodosend.com/t/<16hex>?account=<email>) then
      [🤖](https://mail.google.com/mail/u/<email>/#all/<16hex>) (account from host
      config; use the same mailbox in both). Items keyed gmail:<id> render this
-     pair. Rewrite legacy dodo-link / dodosend:// to Dodosend https; keep
+     pair, with no text label in front of it (the surrounding sentence says what
+     the email is). Link text is 🍎 then 🤖, or a middle dot · if emoji cannot
+     be used — never words like Gmail, Dodosend, or email. Rewrite legacy
+     dodo-link / dodosend:// to Dodosend https; keep
      mail.google.com thread links as Gmail web. Gmail search links may stay
      mail.google.com only when no thread id is known.
   2) a Gmail thread id written in text ("thread 0123456789abcdef" / "threadId") -> "gmail:<id>";

@@ -58,6 +58,19 @@ def normalize_email_link(url, tid):
         return gmail_web_url(tid, acct)
     return dodosend_url(tid, acct)
 
+
+_PAIR_LABELS = frozenset({"🍎", "🤖", "·"})
+_WORD_LABELS = frozenset({"gmail", "dodosend", "dodo", "email", "e-mail", "thread", "mail"})
+
+def normalize_link_label(label, url):
+    """Keep 🍎/🤖/·; rewrite word labels on thread URLs to emoji (🍎 or 🤖)."""
+    lab = (label or "").strip()
+    if lab in _PAIR_LABELS:
+        return lab
+    if not gmail_thread(url):
+        return lab
+    return "🤖" if "mail.google.com" in url else "🍎"
+
 def github_key(url):
     m = re.match(r"https?://github\.com/([^/]+/[^/]+)/(pull|issues)/(\d+)", url)
     return f"https://github.com/{m.group(1)}/{m.group(2)}/{m.group(3)}" if m else None
@@ -77,14 +90,21 @@ def due_hint(text, year):
         return None
 
 def clean(s):
-    return re.sub(r"\s+", " ", LINK.sub(lambda m: m.group(1), s).replace("**", "")).strip()
+    def _label(m):
+        lab, url = m.group(1), m.group(2)
+        if lab.strip() in _PAIR_LABELS:
+            return ""
+        if gmail_thread(url) and lab.strip().lower() in _WORD_LABELS:
+            return ""
+        return lab
+    return re.sub(r"\s+", " ", LINK.sub(_label, s).replace("**", "")).strip()
 
 def parse(md, year=None):
     year = year or datetime.date.today().year
     rows, cur = [], None
     def new(id_, text):
         nonlocal cur
-        links = [{"label": l, "url": u} for l, u in LINK.findall(text)]
+        links = [{"label": normalize_link_label(l, u), "url": u} for l, u in LINK.findall(text)]
         cur = {"id": id_, "item": clean(LINK.sub("", text)).rstrip(" :"), "details": "", "links": links, "_raw": text}
         rows.append(cur)
     for line in md.splitlines():
@@ -103,7 +123,7 @@ def parse(md, year=None):
         if cur is None:
             continue  # preamble without an item: ignore
         text = re.sub(r"^[-*+]\s+", "", s)
-        cur["links"] += [{"label": l, "url": u} for l, u in LINK.findall(text)]
+        cur["links"] += [{"label": normalize_link_label(l, u), "url": u} for l, u in LINK.findall(text)]
         cur["details"] = (cur["details"] + "\n" + clean(text)).strip()
         cur["_raw"] += " " + text
     seen = {}
@@ -162,9 +182,14 @@ weird line
     acct = default_account()
     gmail_canon = gmail_web_url("0123456789abcdef", acct)
     assert r[0]["links"][0]["url"] == gmail_canon, r[0]["links"]
-    pair = parse("**Most urgent:** Mom email [🍎](https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com) [🤖](https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4)", 2026)[0]
+    pair = parse("**Most urgent:** Reply to Mom about the form [🍎](https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com) [🤖](https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4)", 2026)[0]
     assert [l["url"] for l in pair["links"]] == ["https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com", "https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4"], pair
-    assert pair["key"] == "gmail:1a1c9eeab0afe2b4" and pair["item"] == "Mom email", pair
+    assert [l["label"] for l in pair["links"]] == ["🍎", "🤖"] and pair["key"] == "gmail:1a1c9eeab0afe2b4"
+    assert pair["item"] == "Reply to Mom about the form", pair
+    pair_dot = parse("**Most urgent:** Reply to Mom [·](https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com) [·](https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4)", 2026)[0]
+    assert [l["label"] for l in pair_dot["links"]] == ["·", "·"] and pair_dot["item"] == "Reply to Mom", pair_dot
+    pair_words = parse("**Most urgent:** See [Dodosend](https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com) [Gmail](https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4)", 2026)[0]
+    assert [l["label"] for l in pair_words["links"]] == ["🍎", "🤖"] and pair_words["item"] == "See", pair_words
     sample2 = """**Most urgent:** see [Dodo](https://dodosend.com/t/1a1037c65622cc27?account=other@example.com)
 
 **1. Today**
