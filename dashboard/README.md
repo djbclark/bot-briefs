@@ -206,13 +206,13 @@ Prefer `--items-json` with a **stable key per row**. That key is what ties an it
 
 ```json
 [
-  ["1", "Reply to Bob", "Waiting since Tue", [["thread", "https://dodosend.com/t/18c0123456789abc?account=user@example.com"]]],
+  ["1", "Reply to Bob", "Waiting since Tue", [["🍎", "https://dodosend.com/t/18c0123456789abc?account=user@example.com"], ["🤖", "https://mail.google.com/mail/u/user@example.com/#all/18c0123456789abc"]]],
   ["2", "Electric bill", "Due Fri", [], "money:power-bill-2026-10"],
   {"id": "3", "item": "School form", "details": "Sign + return", "key": "family:school-form", "due": "2026-10-30", "links": ["https://..."]}
 ]
 ```
 
-Key precedence: explicit `key` (5th list element or dict `key`), then the item's first source link (Gmail/Dodosend, GitHub or Forgejo preferred; sheet links ignored), then a Gmail thread id in the text, then `h:` + a hash of the normalized title. Never the display number. Republishing the same bot+date updates that report in place. Displayed Gmail thread links use `https://dodosend.com/t/<16-hex-threadId>?account=<email>` (account from `BRIEFS_TODO_REVIEW_ACCOUNT` / the host TOML; omitted if unset or invalid). Incoming `mail.google.com` thread URLs, legacy `dodo-link.pages.dev/t/<hex>` URLs, and `dodosend://thread/<hex>` links are accepted as input and rewritten to that form. There is no Dodosend search URL, so Gmail `#search/` links are left as `mail.google.com` only when no thread id is known.
+Key precedence: explicit `key` (5th list element or dict `key`), then the item's first source link (Gmail/Dodosend, GitHub or Forgejo preferred; sheet links ignored), then a Gmail thread id in the text, then `h:` + a hash of the normalized title. Never the display number. Republishing the same bot+date updates that report in place. Email thread links are shown as a pair: Dodosend first (`https://dodosend.com/t/<16-hex-threadId>?account=<email>`, account from `BRIEFS_TODO_REVIEW_ACCOUNT` / the host TOML, omitted if unset or invalid, label 🍎) then Gmail web (`https://mail.google.com/mail/u/<email>/#all/<16-hex-threadId>`, or `/mail/u/0/` if no account, label 🤖). Items keyed `gmail:<threadId>` render this pair even if only one (or no) thread URL was stored. Incoming `mail.google.com` thread URLs stay Gmail web (canonicalized). Legacy `dodo-link.pages.dev/t/<hex>` and `dodosend://thread/<hex>` links are rewritten to Dodosend https. There is no Dodosend search URL, so Gmail `#search/` links are left as `mail.google.com` only when no thread id is known.
 
 ---
 

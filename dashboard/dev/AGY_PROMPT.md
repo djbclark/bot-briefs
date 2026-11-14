@@ -80,9 +80,12 @@ FTS5: reports_fts(title, body_md, content='reports', content_rowid='id') and ite
   1) first source URL in the item's own text, normalized (strip fragments/query except for Gmail ids, trailing slashes);
      preferred hosts: github.com, forgejo.*, *.atlassian.net/jira, mail.google.com / dodosend.com /
      dodo-link.pages.dev / dodosend://thread/<id> (use the thread id: key "gmail:<id>"),
-     gerrit.*, any other non-sheet URL. Displayed thread links must be
-     https://dodosend.com/t/<16hex>?account=<email> (account from host config); do not show
-     dodosend:// or mail.google.com thread/fallback links. Gmail search links may stay
+     gerrit.*, any other non-sheet URL. Displayed email thread links are a pair:
+     [🍎](https://dodosend.com/t/<16hex>?account=<email>) then
+     [🤖](https://mail.google.com/mail/u/<email>/#all/<16hex>) (account from host
+     config; use the same mailbox in both). Items keyed gmail:<id> render this
+     pair. Rewrite legacy dodo-link / dodosend:// to Dodosend https; keep
+     mail.google.com thread links as Gmail web. Gmail search links may stay
      mail.google.com only when no thread id is known.
   2) a Gmail thread id written in text ("thread 0123456789abcdef" / "threadId") -> "gmail:<id>";
   3) else "h:" + sha1(normalized title)[:12] where normalized = lowercase, links→labels, strip flags words (new, updated,

@@ -27,6 +27,7 @@ from fastapi.responses import HTMLResponse
 from briefs.config import TZ_ET, now_et, state_home
 from briefs.parse import (
     dodosend_thread_url,
+    gmail_web_url,
     is_canonical_dodosend_url,
     parse_gmail_thread_ref,
     rewrite_gmail_link_for_display,
@@ -248,10 +249,11 @@ def build_email_links(
     thread_lookup: Optional[dict[str, dict[str, Any]]] = None,
 ) -> list[dict[str, Any]]:
     """Build safe email/thread links for a row:
-    - Known 16-hex Gmail thread IDs -> one https://dodosend.com/t/<tid>?account=<email> link.
+    - Known 16-hex Gmail thread IDs -> a pair: Dodosend (🍎) then Gmail web (🤖).
     - Preserves Gmail #search/... links only when no thread ID is known (no Dodosend search URL).
     - Preserves safe Shortwave / https links.
-    - Accepts legacy dodosend://, dodo-link.pages.dev, and mail.google.com thread URLs as input.
+    - Accepts legacy dodosend://, dodo-link.pages.dev, and mail.google.com thread URLs as input;
+      Gmail web thread links are kept as Gmail web, not rewritten to Dodosend.
     - Strips any unsafe URL (javascript:, data:, dodosend:// output, malformed URLs, etc.).
     """
     extra = row_extra or {}
@@ -306,19 +308,28 @@ def build_email_links(
     out: list[dict[str, Any]] = []
     emitted_urls: set[str] = set()
 
-    # Emit one canonical Dodosend https link for every known 16-hex thread ID
+    # Emit Dodosend then Gmail web for every known 16-hex thread ID (2026-11-14 pair rule)
     multi_tid = len(known_threads) > 1
     for idx, (tid, acct) in enumerate(known_threads, start=1):
         suffix = f" {idx}" if multi_tid else ""
         dodo_url = dodosend_thread_url(tid, acct)
+        gmail_url = gmail_web_url(tid, acct)
         out.append({
             "kind": "dodosend",
-            "label": f"Dodosend{suffix}",
+            "label": "🍎",
             "url": dodo_url,
             "external": True,
-            "tooltip": f"Open thread {tid} in Dodosend",
+            "tooltip": f"Open thread {tid} in Dodosend{suffix}",
+        })
+        out.append({
+            "kind": "gmail",
+            "label": "🤖",
+            "url": gmail_url,
+            "external": True,
+            "tooltip": f"Open thread {tid} in Gmail{suffix}",
         })
         emitted_urls.add(dodo_url)
+        emitted_urls.add(gmail_url)
 
     # Preserve Gmail search links (only if no thread id is known), Shortwave, other safe links
     search_links: list[tuple[str, Optional[str]]] = []
@@ -735,7 +746,7 @@ def _dom_id_for_key(task_key: str) -> str:
 
 
 def _refresh_stored_review_links(raw_links: Any) -> list[dict[str, Any]]:
-    """Rewrite legacy thread URLs, drop Gmail fallbacks, and keep search only if no thread id."""
+    """Rewrite legacy thread URLs, emit the Dodosend+Gmail pair, and keep search only if no thread id."""
     if not isinstance(raw_links, list):
         return []
     known: list[tuple[str, str, Optional[str]]] = []  # tid, account, label
@@ -770,10 +781,17 @@ def _refresh_stored_review_links(raw_links: Any) -> list[dict[str, Any]]:
         suffix = f" {idx}" if multi else ""
         out.append({
             "kind": "dodosend",
-            "label": lbl or f"Dodosend{suffix}",
+            "label": "🍎",
             "url": dodosend_thread_url(tid, acct),
             "external": True,
-            "tooltip": f"Open thread {tid} in Dodosend",
+            "tooltip": f"Open thread {tid} in Dodosend{suffix}",
+        })
+        out.append({
+            "kind": "gmail",
+            "label": "🤖",
+            "url": gmail_web_url(tid, acct),
+            "external": True,
+            "tooltip": f"Open thread {tid} in Gmail{suffix}",
         })
     if not known:
         out.extend(search)
@@ -1142,7 +1160,7 @@ def apply_decision(
 
 
 def todo_safe_url(url: Any) -> str:
-    """Render-time href guard: rewrite known thread URLs, then is_safe_review_url or "#"."""
+    """Render-time href guard: rewrite legacy thread URLs (keep Gmail web), then is_safe_review_url or "#"."""
     if not isinstance(url, str):
         return "#"
     rewritten = rewrite_gmail_link_for_display(url.strip())

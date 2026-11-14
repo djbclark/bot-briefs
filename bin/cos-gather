@@ -22,6 +22,20 @@ TARGET_BOTS = {"radar": "radar", "zero": "zero", "family": "family", "money": "m
                "project-bot": "project", "one-offs": "oneoffs", "coding": "coding", "other": "other"}
 CLOSED = ("done", "dismissed", "resolved")
 
+
+def _expand_email_links(links, key):
+    """Expand stored thread links / gmail:<tid> keys into the Dodosend + Gmail web pair."""
+    try:
+        dash = os.environ.get("BRIEFS_DASHBOARD", "/home/box/agent-data/shared/dashboard")
+        if dash not in sys.path:
+            sys.path.insert(0, dash)
+        from briefs.parse import ensure_email_link_pair
+        return ensure_email_link_pair(links, key)
+    except Exception:
+        return links
+
+
+
 WEIGHTS = {
     "overdue": 45, "due_today": 50, "due_tomorrow": 40, "due_week": 20, "due_2weeks": 8,
     "money": 15, "legal": 15, "waiting": 15, "failure": 15,
@@ -156,6 +170,7 @@ def gather_dashboard(conn, slugs, cutoff, live, notes):
                 links = json.loads(links or "[]")
             except ValueError:
                 links = []
+            links = _expand_email_links(links, key)
             cflags = []
             if fs and fs >= (cutoff.date() - timedelta(days=1)).isoformat() and fs[:10] == rdate:
                 cflags.append("NEW")

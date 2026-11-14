@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime
 from typing import Any, Optional
 
+from briefs.parse import ensure_email_link_pair
 from briefs.config import (
     BRIEFS_PUBLIC_URL,
     Bot,
@@ -400,6 +401,7 @@ def _format_action_entry(conn: sqlite3.Connection, r: sqlite3.Row, base_url: str
                 links = json.loads(item_row["links_json"] or "[]")
             except Exception:
                 links = []
+            links = ensure_email_link_pair(links, item_row["item_key"])
 
             bot_cli = bot_cli_name(item_row["bot_id"]) if item_row["bot_id"] else ""
 
@@ -639,6 +641,7 @@ def in_progress(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 links = json.loads(item_row["links_json"] or "[]")
             except Exception:
                 links = []
+            links = ensure_email_link_pair(links, item_row["item_key"])
 
             try:
                 lat_payload = json.loads(latest["payload_json"] or "{}")

@@ -51,7 +51,7 @@ from briefs.config import (
 )
 from briefs import syncapi
 from briefs.db import connect, init_schema
-from briefs.parse import rewrite_gmail_link_for_display, safe_url
+from briefs.parse import rewrite_gmail_link_for_display, safe_url, ensure_email_link_pair
 from briefs.store import (
     distinct_areas,
     get_item,
@@ -317,9 +317,10 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         except Exception:
             d["meta"] = {}
         try:
-            d["links"] = json.loads(d.get("links_json") or "[]")
+            raw_links = json.loads(d.get("links_json") or "[]")
         except Exception:
-            d["links"] = []
+            raw_links = []
+        d["links"] = ensure_email_link_pair(raw_links, d.get("item_key"))
 
         flags_list = [f.strip() for f in (d.get("flags") or "").split(",") if f.strip()]
         d["flags_list"] = flags_list

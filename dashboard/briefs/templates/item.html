@@ -38,7 +38,7 @@
           <strong>Source Links:</strong>
           <div class="item-links" style="margin-top: 4px;">
             {% for l in item.links %}
-              <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener">🔗 {{ l.label }}</a>
+              <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener">{% if l.label in ("🍎", "🤖") %}{{ l.label }}{% else %}🔗 {{ l.label }}{% endif %}</a>
             {% endfor %}
           </div>
         </div>

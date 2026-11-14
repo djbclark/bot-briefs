@@ -12,7 +12,17 @@ from markupsafe import Markup
 
 from briefs.actions import in_progress_item_ids, queued_item_texts
 from briefs.config import Bot, find_bot, now_et, today_et
-from briefs.parse import filter_safe_links, is_safe_url, clean_title, compute_item_key, extract_flags, extract_links, normalize_url, parse_brief
+from briefs.parse import filter_safe_links, is_safe_url, clean_title, compute_item_key, extract_flags, extract_links, normalize_url, parse_brief, ensure_email_link_pair
+
+
+
+def _decode_item_links(d: dict[str, Any], key: Any = None) -> list[dict[str, str]]:
+    """Deserialize links_json and expand gmail:<tid> / thread URLs into the email link pair."""
+    try:
+        links = json.loads(d.get("links_json") or "[]")
+    except Exception:
+        links = []
+    return ensure_email_link_pair(links, key if key is not None else d.get("item_key"))
 
 
 def normalize_title_for_diff(title: str) -> str:
@@ -131,6 +141,7 @@ def upsert_report(
             it_flags = {f.strip() for f in it_flags.split(",") if f.strip()}
 
         item_key = it.get("item_key") or compute_item_key(item_text, it_title)
+        it_links = ensure_email_link_pair(it_links, item_key)
         priority = it.get("priority")
         due_at = it.get("due_at")
 
@@ -178,6 +189,7 @@ def upsert_report(
                 if l.get("url") not in seen_urls:
                     curr_links.append(l)
                     seen_urls.add(l.get("url"))
+            curr_links = ensure_email_link_pair(curr_links, item_key)
 
             # Status and meta handling
             curr_status = existing_item["status"]
@@ -431,10 +443,7 @@ def items_open(
             d["meta"] = json.loads(d.get("meta_json") or "{}")
         except Exception:
             d["meta"] = {}
-        try:
-            d["links"] = json.loads(d.get("links_json") or "[]")
-        except Exception:
-            d["links"] = []
+        d["links"] = _decode_item_links(d)
 
         flags_list = [f.strip() for f in (d.get("flags") or "").split(",") if f.strip()]
         d["flags_list"] = flags_list
@@ -484,10 +493,7 @@ def items_snoozed(conn: sqlite3.Connection, bot: Bot | str) -> list[dict[str, An
             d["meta"] = json.loads(d.get("meta_json") or "{}")
         except Exception:
             d["meta"] = {}
-        try:
-            d["links"] = json.loads(d.get("links_json") or "[]")
-        except Exception:
-            d["links"] = []
+        d["links"] = _decode_item_links(d)
         result.append(d)
     return result
 
@@ -567,6 +573,7 @@ def today_view(
                 i.due_at,
                 i.area,
                 i.links_json,
+                i.item_key,
                 i.meta_json,
                 i.status,
                 i.snooze_until,
@@ -584,10 +591,7 @@ def today_view(
             for r in cos_items_rows:
                 cd = dict(r)
                 cd["id"] = cd["item_id"]
-                try:
-                    cd["links"] = json.loads(cd.get("links_json") or "[]")
-                except Exception:
-                    cd["links"] = []
+                cd["links"] = _decode_item_links(cd)
                 try:
                     cd["meta"] = json.loads(cd.get("meta_json") or "{}")
                 except Exception:
@@ -698,10 +702,7 @@ def item_timeline(conn: sqlite3.Connection, item_id: int) -> Optional[dict[str, 
         return None
 
     item = dict(item_row)
-    try:
-        item["links"] = json.loads(item.get("links_json") or "[]")
-    except Exception:
-        item["links"] = []
+    item["links"] = _decode_item_links(item)
     try:
         item["meta"] = json.loads(item.get("meta_json") or "{}")
     except Exception:
@@ -797,7 +798,8 @@ def get_report(conn: sqlite3.Connection, report_id: int) -> Optional[dict[str, A
             i.status,
             i.priority,
             i.due_at,
-            i.links_json
+            i.links_json,
+            i.item_key
         FROM report_items ri
         JOIN items i ON i.id = ri.item_id
         WHERE ri.report_id = ?
@@ -810,10 +812,7 @@ def get_report(conn: sqlite3.Connection, report_id: int) -> Optional[dict[str, A
     for r in item_rows:
         d = dict(r)
         d["flags_list"] = [f.strip() for f in (d.get("flags") or "").split(",") if f.strip()]
-        try:
-            d["links"] = json.loads(d.get("links_json") or "[]")
-        except Exception:
-            d["links"] = []
+        d["links"] = _decode_item_links(d)
         items.append(d)
 
     rep["items"] = items

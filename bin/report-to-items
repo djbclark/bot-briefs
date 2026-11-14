@@ -39,9 +39,24 @@ def dodosend_url(tid, account=None):
     acct = account or default_account()
     return f"https://dodosend.com/t/{tid}?account={acct}" if acct else f"https://dodosend.com/t/{tid}"
 
+def gmail_web_url(tid, account=None):
+    acct = account or default_account()
+    if acct:
+        return f"https://mail.google.com/mail/u/{acct}/#all/{tid}"
+    return f"https://mail.google.com/mail/u/0/#all/{tid}"
+
+_U_ACCT_RE = re.compile(r"mail\.google\.com/mail/u/([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/")
+
 def account_from(url):
-    m = _ACCOUNT_RE.search(url)
+    m = _ACCOUNT_RE.search(url) or _U_ACCT_RE.search(url)
     return m.group(1) if m else None
+
+def normalize_email_link(url, tid):
+    """Keep Gmail web links as Gmail web; turn legacy dodo-link / dodosend:// links into Dodosend https."""
+    acct = account_from(url)
+    if "mail.google.com" in url:
+        return gmail_web_url(tid, acct)
+    return dodosend_url(tid, acct)
 
 def github_key(url):
     m = re.match(r"https?://github\.com/([^/]+/[^/]+)/(pull|issues)/(\d+)", url)
@@ -97,7 +112,7 @@ def parse(md, year=None):
         for l in r["links"]:
             t = gmail_thread(l["url"])
             if t:
-                l["url"] = dodosend_url(t, account_from(l["url"]))
+                l["url"] = normalize_email_link(l["url"], t)
                 if not key:
                     key = f"gmail:{t}"
         if not key:
@@ -145,8 +160,11 @@ weird line
     assert r[4]["key"] == "gmail:" + format(81985529216486895, "x")
     assert r[6]["key"] == r[5]["key"] + "#2.3"
     acct = default_account()
-    canon = "https://dodosend.com/t/0123456789abcdef" + (f"?account={acct}" if acct else "")
-    assert r[0]["links"][0]["url"] == canon, r[0]["links"]
+    gmail_canon = gmail_web_url("0123456789abcdef", acct)
+    assert r[0]["links"][0]["url"] == gmail_canon, r[0]["links"]
+    pair = parse("**Most urgent:** Mom email [🍎](https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com) [🤖](https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4)", 2026)[0]
+    assert [l["url"] for l in pair["links"]] == ["https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com", "https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4"], pair
+    assert pair["key"] == "gmail:1a1c9eeab0afe2b4" and pair["item"] == "Mom email", pair
     sample2 = """**Most urgent:** see [Dodo](https://dodosend.com/t/1a1037c65622cc27?account=other@example.com)
 
 **1. Today**
@@ -155,12 +173,13 @@ weird line
 1.2 scheme [s](dodosend://thread/fedcba9876543210)
 """
     r2 = parse(sample2, 2026)
+    canon = dodosend_url("0123456789abcdef", acct)
     assert r2[0]["key"] == "gmail:1a1037c65622cc27"
     assert r2[0]["links"][0]["url"] == "https://dodosend.com/t/1a1037c65622cc27?account=other@example.com"
     assert r2[2]["key"] == "gmail:0123456789abcdef"
     assert r2[2]["links"][0]["url"] == canon
     assert r2[3]["key"] == "gmail:fedcba9876543210"
-    assert r2[3]["links"][0]["url"] == canon.replace("0123456789abcdef", "fedcba9876543210")
+    assert r2[3]["links"][0]["url"] == dodosend_url("fedcba9876543210", acct)
     assert parse(sample, 2026) == r and parse("", 2026) == [] and parse("junk\n**x", 2026) == []
     import os
     p = "/workspace/report-1029.md"

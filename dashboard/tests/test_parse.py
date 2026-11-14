@@ -103,13 +103,20 @@ def test_date_only_titles_do_not_collide() -> None:
 
 
 def test_gmail_thread_urls_normalize_to_gmail_keys() -> None:
-    from briefs.parse import rewrite_gmail_link_for_display
+    from briefs.parse import rewrite_gmail_link_for_display, ensure_email_link_pair
     tid = "1a1037c65622cc27"
     key = f"gmail:{tid}"
     account = "user@example.com"
     canon = f"https://dodosend.com/t/{tid}?account={account}"
+    gmail_canon = f"https://mail.google.com/mail/u/{account}/#all/{tid}"
     inputs = [
         f"https://mail.google.com/mail/u/0/#all/{tid}",
+        canon,
+        f"https://dodo-link.pages.dev/t/{tid}",
+        f"dodosend://thread/{tid}",
+        f"dodosend://thread/{tid}?account={account}",
+    ]
+    dodo_inputs = [
         canon,
         f"https://dodo-link.pages.dev/t/{tid}",
         f"dodosend://thread/{tid}",
@@ -118,6 +125,8 @@ def test_gmail_thread_urls_normalize_to_gmail_keys() -> None:
     for url in inputs:
         assert normalize_url(url) == key
         assert compute_item_key(f"1. See [t]({url}) please", "See t please") == key
+    assert rewrite_gmail_link_for_display(f"https://mail.google.com/mail/u/0/#all/{tid}") == gmail_canon
+    for url in dodo_inputs:
         assert rewrite_gmail_link_for_display(url).startswith(f"https://dodosend.com/t/{tid}?account=")
     assert rewrite_gmail_link_for_display(canon) == canon
     search = "https://mail.google.com/mail/u/0/#search/from%3Aa%40b.com"
@@ -125,3 +134,17 @@ def test_gmail_thread_urls_normalize_to_gmail_keys() -> None:
     extracted = extract_links(f"see [x](dodosend://thread/{tid})")
     assert extracted[0]["url"] == f"dodosend://thread/{tid}"
     assert compute_item_key(f"see [x](dodosend://thread/{tid})", "see x") == key
+
+    pair = ensure_email_link_pair([], key)
+    assert [l["url"] for l in pair] == [canon, gmail_canon]
+    assert [l["label"] for l in pair] == ["🍎", "🤖"]
+    pair2 = ensure_email_link_pair(
+        [{"label": "thread", "url": f"https://dodosend.com/t/{tid}?account=other@example.com"}],
+        "h:ignored",
+    )
+    assert pair2[0]["url"] == f"https://dodosend.com/t/{tid}?account=other@example.com"
+    assert pair2[1]["url"] == f"https://mail.google.com/mail/u/other@example.com/#all/{tid}"
+    title = clean_title(
+        f"Mom email [🍎]({canon}) [🤖]({gmail_canon}) needs a reply"
+    )
+    assert title == "Mom email needs a reply"

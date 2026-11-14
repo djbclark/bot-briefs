@@ -125,6 +125,8 @@ def test_no_dispatch_and_no_other_writes(env, monkeypatch):
 TID = "0123456789abcdef"
 CANON = f"https://dodosend.com/t/{TID}?account=user@example.com"
 CANON_OTHER = f"https://dodosend.com/t/{TID}?account=other@example.com"
+GMAIL = f"https://mail.google.com/mail/u/user@example.com/#all/{TID}"
+GMAIL_OTHER = f"https://mail.google.com/mail/u/other@example.com/#all/{TID}"
 
 
 def test_todo_safe_url_guard():
@@ -132,7 +134,7 @@ def test_todo_safe_url_guard():
     assert tr.todo_safe_url(f"dodosend://thread/{TID}?account=other@example.com") == CANON_OTHER
     assert tr.todo_safe_url("dodosend://evil/x") == "#"
     assert tr.todo_safe_url("javascript:alert(1)") == "#"
-    assert tr.todo_safe_url(f"https://mail.google.com/mail/u/0/#all/{TID}") == CANON
+    assert tr.todo_safe_url(f"https://mail.google.com/mail/u/0/#all/{TID}") == GMAIL
     assert tr.todo_safe_url(f"https://dodo-link.pages.dev/t/{TID}") == CANON
     assert tr.todo_safe_url(CANON) == CANON
     assert tr.is_safe_review_url(f"dodosend://thread/{TID}") is False
@@ -143,7 +145,7 @@ def test_todo_safe_url_guard():
     assert tr.is_safe_review_url("https://mail.google.com/mail/u/0/#search/from%3Aa%40b.com") is True
 
 
-def test_build_email_links_canonical_and_no_gmail_fallback():
+def test_build_email_links_emits_dodosend_and_gmail_pair():
     search = "https://mail.google.com/mail/u/0/#search/from%3Aa%40b.com"
     cases = [
         [f"dodosend://thread/{TID}"],
@@ -155,9 +157,11 @@ def test_build_email_links_canonical_and_no_gmail_fallback():
     for links in cases:
         out = tr.build_email_links(links, [])
         urls = [lk["url"] for lk in out]
-        assert len(out) == 1 and out[0]["kind"] == "dodosend"
+        assert len(out) == 2
+        assert [lk["kind"] for lk in out] == ["dodosend", "gmail"]
+        assert [lk["label"] for lk in out] == ["🍎", "🤖"]
         assert urls[0].startswith(f"https://dodosend.com/t/{TID}?account=")
-        assert "mail.google.com" not in "".join(urls)
+        assert urls[1].startswith("https://mail.google.com/mail/u/") and urls[1].endswith(f"/#all/{TID}")
         assert "dodosend://" not in "".join(urls)
 
     out = tr.build_email_links([search], [])
@@ -166,21 +170,22 @@ def test_build_email_links_canonical_and_no_gmail_fallback():
 
     out = tr.build_email_links([f"https://mail.google.com/mail/u/0/#all/{TID}", search], [])
     urls = [lk["url"] for lk in out]
-    assert urls == [CANON]
+    assert urls == [CANON, GMAIL]
     assert all(lk["kind"] != "gmail-search" for lk in out)
 
     out = tr.build_email_links([], [], row_extra={"thread_id": TID})
-    assert [lk["url"] for lk in out] == [CANON]
+    assert [lk["url"] for lk in out] == [CANON, GMAIL]
 
 
-def test_refresh_stored_legacy_links_dedupes_gmail_fallback():
+def test_refresh_stored_legacy_links_emits_pair():
     raw = [
         {"kind": "dodosend", "label": "Dodosend", "url": f"dodosend://thread/{TID}?account=other@example.com"},
         {"kind": "gmail", "label": "Gmail", "url": f"https://mail.google.com/mail/u/0/#all/{TID}"},
         {"kind": "gmail-search", "label": "Gmail search", "url": "https://mail.google.com/mail/u/0/#search/from%3Ax"},
     ]
     out = tr._refresh_stored_review_links(raw)
-    assert [lk["url"] for lk in out] == [CANON_OTHER]
+    assert [lk["url"] for lk in out] == [CANON_OTHER, GMAIL_OTHER]
+    assert [lk["label"] for lk in out] == ["🍎", "🤖"]
 
 
 def test_owner_override(monkeypatch):

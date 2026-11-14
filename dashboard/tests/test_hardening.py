@@ -96,16 +96,25 @@ def test_templates_filter_external_hrefs():
     assert not bad, bad
 
 
-def test_safe_url_rewrites_gmail_thread_links():
+def test_safe_url_rewrites_legacy_thread_links_and_keeps_gmail_web():
     tid = "0123456789abcdef"
-    canon = f"https://dodosend.com/t/{tid}?account=user@example.com"
-    assert safe_url(f"https://mail.google.com/mail/u/0/#all/{tid}") == canon
-    assert safe_url(f"dodosend://thread/{tid}") == canon
+    dodo = f"https://dodosend.com/t/{tid}?account=user@example.com"
+    gmail = f"https://mail.google.com/mail/u/user@example.com/#all/{tid}"
+    assert safe_url(f"https://mail.google.com/mail/u/0/#all/{tid}") == gmail
+    assert safe_url(f"https://mail.google.com/mail/u/other@example.com/#all/{tid}") == (
+        f"https://mail.google.com/mail/u/other@example.com/#all/{tid}"
+    )
+    assert safe_url(f"dodosend://thread/{tid}") == dodo
     assert not is_safe_url(f"dodosend://thread/{tid}")
     assert is_safe_url(f"https://mail.google.com/mail/u/0/#all/{tid}")
     search = "https://mail.google.com/mail/u/0/#search/from%3Aa%40b.com"
     assert safe_url(search) == search
     from briefs.web import render_markdown
-    html = render_markdown(f"see [t](https://mail.google.com/mail/u/0/#all/{tid})")
-    assert canon in html
-    assert "mail.google.com" not in html
+    html = render_markdown(
+        f"Mom email [🍎]({dodo}) [🤖]({gmail})"
+    )
+    assert dodo in html and gmail in html
+    assert "🍎" in html and "🤖" in html
+    html_legacy = render_markdown(f"see [t](https://mail.google.com/mail/u/0/#all/{tid})")
+    assert gmail in html_legacy
+    assert "dodosend.com" not in html_legacy

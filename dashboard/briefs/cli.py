@@ -18,7 +18,7 @@ from briefs.config import (
 )
 from briefs.db import connect, init_schema
 from briefs.importer import run_import
-from briefs.parse import clean_title, compute_item_key, extract_flags, filter_safe_links, parse_brief
+from briefs.parse import clean_title, compute_item_key, extract_flags, filter_safe_links, parse_brief, ensure_email_link_pair
 from briefs.store import items_open, search, upsert_report
 
 
@@ -151,6 +151,7 @@ def parse_items_json_data(rows_data: list[Any]) -> list[dict[str, Any]]:
         # Key from the item's own source links first (sheet links are ignored by compute_item_key).
         key_text = " ".join([item_title, status_details] + [lk["url"] for lk in links])
         item_key = str(explicit_key).strip() if explicit_key else compute_item_key(key_text, title)
+        links = ensure_email_link_pair(links, item_key)
 
         it: dict[str, Any] = {
             "display_id": disp_id,
@@ -221,6 +222,7 @@ def parse_sheet_rows_data(rows_data: list[Any]) -> list[dict[str, Any]]:
         title = clean_title(item_title)
         key_text = " ".join([item_title, status_details] + [lk["url"] for lk in links])
         item_key = str(explicit_key).strip() if explicit_key else compute_item_key(key_text, title)
+        links = ensure_email_link_pair(links, item_key)
 
         it: dict[str, Any] = {
             "display_id": disp_id,

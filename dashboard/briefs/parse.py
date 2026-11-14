@@ -39,6 +39,7 @@ def _default_gmail_account() -> str | None:
     return None
 
 
+
 def _account_from_query(query: str) -> str | None:
     vals = (parse_qs(query, keep_blank_values=True).get("account") or [])
     if vals and _EMAIL_RE.match(vals[0]):
@@ -46,12 +47,26 @@ def _account_from_query(query: str) -> str | None:
     return None
 
 
+def _account_from_gmail_path(path: str) -> str | None:
+    m = re.search(r"/mail/u/([^/]+)/", path or "")
+    if m and _EMAIL_RE.match(m.group(1)):
+        return m.group(1)
+    return None
+
+
+def _resolved_account(account: str | None = None) -> str | None:
+    if account and _EMAIL_RE.match(account):
+        return account
+    return _default_gmail_account()
+
+
 def parse_gmail_thread_ref(url: Any) -> tuple[str, str | None] | None:
     """Extract (thread_id, account_or_None) from accepted Gmail/Dodosend URL forms.
 
     Inputs: https://dodosend.com/t/<16hex>?account=..., legacy
     https://dodo-link.pages.dev/t/<16hex>, dodosend://thread/<16hex>, and
-    mail.google.com thread URLs. Search URLs are not thread refs.
+    mail.google.com thread URLs (account taken from /mail/u/<email>/ when present).
+    Search URLs are not thread refs.
     """
     if not isinstance(url, str):
         return None
@@ -69,24 +84,36 @@ def parse_gmail_thread_ref(url: Any) -> tuple[str, str | None] | None:
             return pm.group(1).lower(), _account_from_query(parsed.query)
         return None
     if "mail.google.com" in host:
+        acct = _account_from_gmail_path(parsed.path)
         gm = _GMAIL_THREAD_FRAG_RE.match(parsed.fragment)
         if gm:
-            return gm.group(2).lower(), None
+            return gm.group(2).lower(), acct
         tf = re.search(r"thread-f:(\d+)", u)
         if tf:
-            return format(int(tf.group(1)), "x"), None
+            return format(int(tf.group(1)), "x"), acct
     return None
 
 
 def dodosend_thread_url(tid: str, account: str | None = None) -> str:
-    """Canonical thread link: https://dodosend.com/t/<16hex> with optional ?account=<email>."""
+    """Canonical Dodosend thread link: https://dodosend.com/t/<16hex> with optional ?account=<email>."""
     t = tid.strip().lower()
     if not _HEX16_RE.match(t):
         raise ValueError(f"invalid Gmail thread id: {tid!r}")
-    acct = account if (account and _EMAIL_RE.match(account)) else _default_gmail_account()
+    acct = _resolved_account(account)
     if acct:
         return f"https://dodosend.com/t/{t}?account={acct}"
     return f"https://dodosend.com/t/{t}"
+
+
+def gmail_web_url(tid: str, account: str | None = None) -> str:
+    """Canonical Gmail web thread link: https://mail.google.com/mail/u/<email-or-0>/#all/<16hex>."""
+    t = tid.strip().lower()
+    if not _HEX16_RE.match(t):
+        raise ValueError(f"invalid Gmail thread id: {tid!r}")
+    acct = _resolved_account(account)
+    if acct:
+        return f"https://mail.google.com/mail/u/{acct}/#all/{t}"
+    return f"https://mail.google.com/mail/u/0/#all/{t}"
 
 
 def is_canonical_dodosend_url(url: Any) -> bool:
@@ -97,7 +124,7 @@ def is_canonical_dodosend_url(url: Any) -> bool:
 
 
 def rewrite_gmail_link_for_display(url: Any) -> str:
-    """Rewrite a known thread URL to the canonical Dodosend https form; otherwise return as-is."""
+    """Keep Gmail web thread links as Gmail web; rewrite legacy dodo-link / dodosend:// to Dodosend https."""
     if not isinstance(url, str):
         return url
     u = url.strip()
@@ -105,6 +132,8 @@ def rewrite_gmail_link_for_display(url: Any) -> str:
     if not ref:
         return u
     tid, acct = ref
+    if "mail.google.com" in u:
+        return gmail_web_url(tid, acct)
     return dodosend_thread_url(tid, acct)
 
 
@@ -133,6 +162,7 @@ def safe_url(url: Any, fallback: str = "#") -> str:
 
 
 def filter_safe_links(links: Any) -> list[dict[str, str]]:
+    """Drop unsafe hrefs and rewrite legacy thread URLs; keep Gmail web thread links as Gmail web."""
     out: list[dict[str, str]] = []
     for l in links or []:
         if not isinstance(l, dict) or not isinstance(l.get("url"), str):
@@ -142,6 +172,71 @@ def filter_safe_links(links: Any) -> list[dict[str, str]]:
             item = dict(l)
             item["url"] = rewritten
             out.append(item)
+    return out
+
+
+EMAIL_DODO_LABEL = "🍎"
+EMAIL_GMAIL_LABEL = "🤖"
+
+
+def _thread_id_from_item_key(item_key: Any) -> str | None:
+    if not isinstance(item_key, str):
+        return None
+    m = re.fullmatch(r"gmail:([0-9a-fA-F]{16})", item_key.strip())
+    return m.group(1).lower() if m else None
+
+
+def ensure_email_link_pair(links: Any, item_key: Any = None) -> list[dict[str, str]]:
+    """Ensure each known Gmail thread is a Dodosend then Gmail web pair (🍎, 🤖).
+
+    Email links are a pair, Dodosend first then Gmail web. Legacy dodo-link /
+    dodosend:// URLs become Dodosend https. Gmail #search/ links are kept only
+    when no thread id is known. A gmail:<16hex> item_key synthesizes the pair
+    even when no links are stored. Other (non-thread) links are preserved after
+    the pair.
+    """
+    raw = [l for l in (links or []) if isinstance(l, dict) and isinstance(l.get("url"), str)]
+    tids: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+    others: list[dict[str, str]] = []
+    searches: list[dict[str, str]] = []
+
+    def _add_tid(tid: str, acct: str | None) -> None:
+        t = tid.strip().lower()
+        if not _HEX16_RE.match(t) or t in seen:
+            return
+        seen.add(t)
+        tids.append((t, _resolved_account(acct)))
+
+    for l in raw:
+        u = l["url"].strip()
+        ref = parse_gmail_thread_ref(u)
+        if ref:
+            _add_tid(ref[0], ref[1])
+            continue
+        rewritten = rewrite_gmail_link_for_display(u)
+        if not is_safe_url(rewritten):
+            continue
+        item = dict(l)
+        item["url"] = rewritten
+        parsed = urlsplit(rewritten)
+        host = (parsed.hostname or "").lower()
+        if "mail.google.com" in host and parsed.fragment.startswith("search/"):
+            searches.append(item)
+        else:
+            others.append(item)
+
+    key_tid = _thread_id_from_item_key(item_key)
+    if key_tid:
+        _add_tid(key_tid, None)
+
+    out: list[dict[str, str]] = []
+    for tid, acct in tids:
+        out.append({"label": EMAIL_DODO_LABEL, "url": dodosend_thread_url(tid, acct)})
+        out.append({"label": EMAIL_GMAIL_LABEL, "url": gmail_web_url(tid, acct)})
+    if not tids:
+        out.extend(searches)
+    out.extend(others)
     return out
 
 
@@ -229,8 +324,12 @@ def extract_flags(line: str) -> set[str]:
 
 def clean_title(text: str) -> str:
     """Extract a clean, plain text title from an item's first sentence or clause (<=160 chars)."""
-    # Replace markdown links [label](url) with label
-    t = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
+    # Replace markdown links [label](url) with label; pair-rule emoji labels are not title text
+    def _md_link_label(m: re.Match[str]) -> str:
+        label = m.group(1)
+        return "" if label in {"🍎", "🤖"} else label
+
+    t = re.sub(r"\[([^\]]+)\]\([^\)]+\)", _md_link_label, text)
     # Remove markdown styling
     t = t.replace("**", "").replace("*", "").replace("`", "")
     # Remove flag tags like (new), (updated), (resolved), NEW:
