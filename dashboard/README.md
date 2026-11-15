@@ -11,6 +11,7 @@ Bot Briefs ingests reports and transcripts across 12 personal bots (Chief of Sta
 - **Backend**: Python 3.11+, [FastAPI](https://fastapi.tiangolo.com/), standard library [sqlite3](https://docs.python.org/3/library/sqlite3.html) (WAL mode, foreign keys enabled). No ORM.
 - **Search**: SQLite FTS5 full-text search with automatic synchronization triggers and highlighted snippets.
 - **Frontend**: Server-rendered HTML via Jinja2 templates, styled with a lightweight, responsive CSS system (supporting system font, light/dark themes via `prefers-color-scheme`, and 44px touch targets for mobile).
+- **Email links**: Dodosend and Gmail favicons are vendored in `briefs/static/` (see "Email thread links" below).
 - **Interactivity**: Vendored [htmx](https://htmx.org/) (served locally from `briefs/static/htmx.min.js`), enabling live debounced search and dynamic filter bar updates without full page reloads.
 - **Zero External Dependencies / CDNs**: All static assets and fonts are hosted locally; works entirely offline.
 - **Security & Network**: Binds exclusively to `127.0.0.1` and authenticates via Tailscale Serve headers. Never expose via Funnel.
@@ -206,13 +207,13 @@ Prefer `--items-json` with a **stable key per row**. That key is what ties an it
 
 ```json
 [
-  ["1", "Reply to Bob", "Waiting since Tue", [["🍎", "https://dodosend.com/t/18c0123456789abc?account=user@example.com"], ["🤖", "https://mail.google.com/mail/u/user@example.com/#all/18c0123456789abc"]]],
+  ["1", "Reply to Bob", "Waiting since Tue", [[" ", "https://dodosend.com/t/18c0123456789abc?account=user@example.com"], [" ", "https://mail.google.com/mail/u/user@example.com/#all/18c0123456789abc"]]],
   ["2", "Electric bill", "Due Fri", [], "money:power-bill-2026-10"],
   {"id": "3", "item": "School form", "details": "Sign + return", "key": "family:school-form", "due": "2026-10-30", "links": ["https://..."]}
 ]
 ```
 
-Key precedence: explicit `key` (5th list element or dict `key`), then the item's first source link (Gmail/Dodosend, GitHub or Forgejo preferred; sheet links ignored), then a Gmail thread id in the text, then `h:` + a hash of the normalized title. Never the display number. Republishing the same bot+date updates that report in place. Email thread links are shown as a pair: Dodosend first (`https://dodosend.com/t/<16-hex-threadId>?account=<email>`, account from `BRIEFS_TODO_REVIEW_ACCOUNT` / the host TOML, omitted if unset or invalid, label 🍎) then Gmail web (`https://mail.google.com/mail/u/<email>/#all/<16-hex-threadId>`, or `/mail/u/0/` if no account, label 🤖; if a context cannot use emoji, the label is a middle dot ·, never words like Gmail, Dodosend, or email). Items keyed `gmail:<threadId>` render this pair even if only one (or no) thread URL was stored. Incoming `mail.google.com` thread URLs stay Gmail web (canonicalized). Legacy `dodo-link.pages.dev/t/<hex>` and `dodosend://thread/<hex>` links are rewritten to Dodosend https. There is no Dodosend search URL, so Gmail `#search/` links are left as `mail.google.com` only when no thread id is known.
+Key precedence: explicit `key` (5th list element or dict `key`), then the item's first source link (Gmail/Dodosend, GitHub or Forgejo preferred; sheet links ignored), then a Gmail thread id in the text, then `h:` + a hash of the normalized title. Never the display number. Republishing the same bot+date updates that report in place. Email thread links are shown as a pair: Dodosend first (`https://dodosend.com/t/<16-hex-threadId>?account=<email>`, account from `BRIEFS_TODO_REVIEW_ACCOUNT` / the host TOML, omitted if unset or invalid) then Gmail web (`https://mail.google.com/mail/u/<email>/#all/<16-hex-threadId>`, or `/mail/u/0/` if no account). In markdown and chat the link text of each is a single regular space: `[ ](<dodosend>) [ ](<gmail>)` (2026-11-15 rule; older 🍎/🤖, middle-dot ·, and word labels such as Gmail, Dodosend, macOS or Android are accepted and rewritten to the space form). The web UI shows the real Dodosend and Gmail favicons as the two links (alt/title "Dodosend" / "Gmail"), served from `briefs/static/favicon-dodosend.png` and `briefs/static/favicon-gmail.png`. These were fetched once on 2026-11-15 from `https://dodosend.com/icon.png` and `https://mail.google.com/favicon.ico` (which redirects to ssl.gstatic.com) and scaled to 64x64 PNG, so nothing is hotlinked. Items keyed `gmail:<threadId>` render this pair even if only one (or no) thread URL was stored. Incoming `mail.google.com` thread URLs stay Gmail web (canonicalized). Legacy `dodo-link.pages.dev/t/<hex>` and `dodosend://thread/<hex>` links are rewritten to Dodosend https. There is no Dodosend search URL, so Gmail `#search/` links are left as `mail.google.com` only when no thread id is known.
 
 ---
 

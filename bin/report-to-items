@@ -52,24 +52,34 @@ def account_from(url):
     return m.group(1) if m else None
 
 def normalize_email_link(url, tid):
-    """Keep Gmail web links as Gmail web; turn legacy dodo-link / dodosend:// links into Dodosend https."""
+    """Email-link rule: a pair, Dodosend then Gmail web, each with link text " " (2026-11-15; replaces
+    the 🍎/🤖 pair). Keep Gmail web links as Gmail web; turn legacy dodo-link / dodosend:// links into
+    Dodosend https."""
     acct = account_from(url)
     if "mail.google.com" in url:
         return gmail_web_url(tid, acct)
     return dodosend_url(tid, acct)
 
 
-_PAIR_LABELS = frozenset({"🍎", "🤖", "·"})
-_WORD_LABELS = frozenset({"gmail", "dodosend", "dodo", "email", "e-mail", "thread", "mail"})
+EMAIL_LINK_LABEL = " "  # 2026-11-15: email links are [ ](dodosend) [ ](gmail web)
+_PAIR_LABELS = frozenset({"", "🍎", "🤖", "·"})  # older pair labels; .strip() of " " is ""
+_WORD_LABELS = frozenset({"gmail", "dodosend", "dodo", "email", "e-mail", "thread", "mail",
+                          "macos", "mac", "android", "gmail web", "web"})
 
 def normalize_link_label(label, url):
-    """Keep 🍎/🤖/·; rewrite word labels on thread URLs to emoji (🍎 or 🤖)."""
+    """Email thread links (Dodosend or Gmail) always get the single-space label; others keep theirs."""
+    if gmail_thread(url):
+        return EMAIL_LINK_LABEL
+    return (label or "").strip()
+
+def is_pair_label(label, url):
+    """True when a link label is pair decoration (space, 🍎/🤖/·, or a word like Gmail) on a thread URL."""
     lab = (label or "").strip()
-    if lab in _PAIR_LABELS:
-        return lab
-    if not gmail_thread(url):
-        return lab
-    return "🤖" if "mail.google.com" in url else "🍎"
+    return bool(gmail_thread(url)) and (lab in _PAIR_LABELS or lab.lower() in _WORD_LABELS)
+
+def email_pair_md(tid, account=None):
+    """Markdown for one email: Dodosend then Gmail web, each with link text " "."""
+    return f"[{EMAIL_LINK_LABEL}]({dodosend_url(tid, account)}) [{EMAIL_LINK_LABEL}]({gmail_web_url(tid, account)})"
 
 def github_key(url):
     m = re.match(r"https?://github\.com/([^/]+/[^/]+)/(pull|issues)/(\d+)", url)
@@ -92,11 +102,7 @@ def due_hint(text, year):
 def clean(s):
     def _label(m):
         lab, url = m.group(1), m.group(2)
-        if lab.strip() in _PAIR_LABELS:
-            return ""
-        if gmail_thread(url) and lab.strip().lower() in _WORD_LABELS:
-            return ""
-        return lab
+        return "" if is_pair_label(lab, url) else lab
     return re.sub(r"\s+", " ", LINK.sub(_label, s).replace("**", "")).strip()
 
 def parse(md, year=None):
@@ -184,12 +190,19 @@ weird line
     assert r[0]["links"][0]["url"] == gmail_canon, r[0]["links"]
     pair = parse("**Most urgent:** Reply to Mom about the form [🍎](https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com) [🤖](https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4)", 2026)[0]
     assert [l["url"] for l in pair["links"]] == ["https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com", "https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4"], pair
-    assert [l["label"] for l in pair["links"]] == ["🍎", "🤖"] and pair["key"] == "gmail:1a1c9eeab0afe2b4"
+    assert [l["label"] for l in pair["links"]] == [" ", " "] and pair["key"] == "gmail:1a1c9eeab0afe2b4"
     assert pair["item"] == "Reply to Mom about the form", pair
-    pair_dot = parse("**Most urgent:** Reply to Mom [·](https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com) [·](https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4)", 2026)[0]
-    assert [l["label"] for l in pair_dot["links"]] == ["·", "·"] and pair_dot["item"] == "Reply to Mom", pair_dot
-    pair_words = parse("**Most urgent:** See [Dodosend](https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com) [Gmail](https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4)", 2026)[0]
-    assert [l["label"] for l in pair_words["links"]] == ["🍎", "🤖"] and pair_words["item"] == "See", pair_words
+    # Space form (2026-11-15) and every older form (emoji, middle dot, word labels) end up as [ ]( ) [ ]( ).
+    d_url, g_url = "https://dodosend.com/t/1a1c9eeab0afe2b4?account=t@example.com", "https://mail.google.com/mail/u/t@example.com/#all/1a1c9eeab0afe2b4"
+    assert email_pair_md("1a1c9eeab0afe2b4", "t@example.com") == f"[ ]({d_url}) [ ]({g_url})"
+    for dl, gl in [(" ", " "), ("🍎", "🤖"), ("·", "·"), ("Dodosend", "Gmail"), ("macOS", "Android"), ("Dodo", "Gmail web")]:
+        px = parse(f"**Most urgent:** Reply to Mom [{dl}]({d_url}) [{gl}]({g_url}) today\n  - see [{dl}]({d_url}) [{gl}]({g_url})", 2026)[0]
+        assert [(l["label"], l["url"]) for l in px["links"]] == [(" ", d_url), (" ", g_url)] * 2, (dl, px)
+        assert px["item"] == "Reply to Mom today" and px["details"] == "see", (dl, px)
+        assert px["key"] == "gmail:1a1c9eeab0afe2b4"
+    # Non-email links keep their labels, even word-like ones.
+    other = parse("**Most urgent:** read [Gmail help](https://support.google.com/mail) [PR](https://github.com/a/b/pull/7)", 2026)[0]
+    assert [l["label"] for l in other["links"]] == ["Gmail help", "PR"], other
     sample2 = """**Most urgent:** see [Dodo](https://dodosend.com/t/1a1037c65622cc27?account=other@example.com)
 
 **1. Today**
@@ -198,6 +211,7 @@ weird line
 1.2 scheme [s](dodosend://thread/fedcba9876543210)
 """
     r2 = parse(sample2, 2026)
+    assert all(l["label"] == " " for row in r2 for l in row["links"]), r2
     canon = dodosend_url("0123456789abcdef", acct)
     assert r2[0]["key"] == "gmail:1a1037c65622cc27"
     assert r2[0]["links"][0]["url"] == "https://dodosend.com/t/1a1037c65622cc27?account=other@example.com"

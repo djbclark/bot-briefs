@@ -249,7 +249,7 @@ def build_email_links(
     thread_lookup: Optional[dict[str, dict[str, Any]]] = None,
 ) -> list[dict[str, Any]]:
     """Build safe email/thread links for a row:
-    - Known 16-hex Gmail thread IDs -> a pair: Dodosend (🍎) then Gmail web (🤖).
+    - Known 16-hex Gmail thread IDs -> a pair: Dodosend then Gmail web, link text " " (favicons in the UI).
     - Preserves Gmail #search/... links only when no thread ID is known (no Dodosend search URL).
     - Preserves safe Shortwave / https links.
     - Accepts legacy dodosend://, dodo-link.pages.dev, and mail.google.com thread URLs as input;
@@ -308,7 +308,7 @@ def build_email_links(
     out: list[dict[str, Any]] = []
     emitted_urls: set[str] = set()
 
-    # Emit Dodosend then Gmail web for every known 16-hex thread ID (2026-11-14 pair rule)
+    # Emit Dodosend then Gmail web for every known 16-hex thread ID (2026-11-14 pair rule, 2026-11-15 space labels)
     multi_tid = len(known_threads) > 1
     for idx, (tid, acct) in enumerate(known_threads, start=1):
         suffix = f" {idx}" if multi_tid else ""
@@ -316,14 +316,14 @@ def build_email_links(
         gmail_url = gmail_web_url(tid, acct)
         out.append({
             "kind": "dodosend",
-            "label": "🍎",
+            "label": " ",
             "url": dodo_url,
             "external": True,
             "tooltip": f"Open thread {tid} in Dodosend{suffix}",
         })
         out.append({
             "kind": "gmail",
-            "label": "🤖",
+            "label": " ",
             "url": gmail_url,
             "external": True,
             "tooltip": f"Open thread {tid} in Gmail{suffix}",
@@ -781,14 +781,14 @@ def _refresh_stored_review_links(raw_links: Any) -> list[dict[str, Any]]:
         suffix = f" {idx}" if multi else ""
         out.append({
             "kind": "dodosend",
-            "label": "🍎",
+            "label": " ",
             "url": dodosend_thread_url(tid, acct),
             "external": True,
             "tooltip": f"Open thread {tid} in Dodosend{suffix}",
         })
         out.append({
             "kind": "gmail",
-            "label": "🤖",
+            "label": " ",
             "url": gmail_web_url(tid, acct),
             "external": True,
             "tooltip": f"Open thread {tid} in Gmail{suffix}",

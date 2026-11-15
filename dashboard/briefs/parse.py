@@ -175,19 +175,42 @@ def filter_safe_links(links: Any) -> list[dict[str, str]]:
     return out
 
 
-EMAIL_DODO_LABEL = "🍎"
-EMAIL_GMAIL_LABEL = "🤖"
-EMAIL_PLAIN_LABEL = "·"
-EMAIL_PAIR_LABELS = frozenset({EMAIL_DODO_LABEL, EMAIL_GMAIL_LABEL, EMAIL_PLAIN_LABEL})
+# Email-link rule (2026-11-15): in chat/markdown each email link is two links whose link
+# text is a single regular space, Dodosend first then Gmail web. The web dashboard
+# shows the vendored Dodosend and Gmail favicons instead (see email_link_kind).
+EMAIL_LINK_LABEL = " "
+# Older pair labels (2026-11-14 emoji pair, · fallback); accepted and rewritten to a space.
+EMAIL_LEGACY_PAIR_LABELS = frozenset({"🍎", "🤖", "·"})
 # Word labels we never emit for a thread pair; incoming ones are rewritten.
 EMAIL_PAIR_WORD_LABELS = frozenset({
     "gmail", "dodosend", "dodo", "email", "thread", "mail", "e-mail",
+    "macos", "mac", "android", "gmail web", "web",
 })
+EMAIL_LINK_KINDS = {
+    "dodosend": {"name": "Dodosend", "icon": "favicon-dodosend.png"},
+    "gmail": {"name": "Gmail", "icon": "favicon-gmail.png"},
+}
 
 
 def is_email_pair_label(label: object) -> bool:
-    """True for the allowed thread-pair link texts: 🍎, 🤖, or a middle dot ·."""
-    return isinstance(label, str) and label.strip() in EMAIL_PAIR_LABELS
+    """True for thread-pair link texts that are not title words: a space (or empty), 🍎, 🤖, or ·."""
+    if not isinstance(label, str):
+        return False
+    lab = label.strip()
+    return lab == "" or lab in EMAIL_LEGACY_PAIR_LABELS
+
+
+def is_email_pair_word_label(label: object) -> bool:
+    """True for word labels (Gmail, Dodosend, macOS, Android, ...) that the pair rule replaces."""
+    return isinstance(label, str) and label.strip().lower() in EMAIL_PAIR_WORD_LABELS
+
+
+def email_link_kind(url: Any) -> str | None:
+    """'dodosend' or 'gmail' for a Gmail thread link (any accepted form), else None."""
+    if not isinstance(url, str) or not parse_gmail_thread_ref(url):
+        return None
+    host = (urlsplit(url.strip()).hostname or "").lower()
+    return "gmail" if "mail.google.com" in host else "dodosend"
 
 
 def _thread_id_from_item_key(item_key: Any) -> str | None:
@@ -198,9 +221,11 @@ def _thread_id_from_item_key(item_key: Any) -> str | None:
 
 
 def ensure_email_link_pair(links: Any, item_key: Any = None) -> list[dict[str, str]]:
-    """Ensure each known Gmail thread is a Dodosend then Gmail web pair (🍎, 🤖).
+    """Ensure each known Gmail thread is a Dodosend then Gmail web pair, link text " ".
 
-    Email links are a pair, Dodosend first then Gmail web. Legacy dodo-link /
+    Email links are a pair, Dodosend first then Gmail web, each with a single-space
+    label (2026-11-15); older 🍎/🤖/·/word labels are rewritten and templates draw
+    favicons. Legacy dodo-link /
     dodosend:// URLs become Dodosend https. Gmail #search/ links are kept only
     when no thread id is known. A gmail:<16hex> item_key synthesizes the pair
     even when no links are stored. Other (non-thread) links are preserved after
@@ -212,14 +237,10 @@ def ensure_email_link_pair(links: Any, item_key: Any = None) -> list[dict[str, s
     others: list[dict[str, str]] = []
     searches: list[dict[str, str]] = []
 
-    tid_pair_labels: dict[str, set[str]] = {}
-
-    def _add_tid(tid: str, acct: str | None, label: object = None) -> None:
+    def _add_tid(tid: str, acct: str | None) -> None:
         t = tid.strip().lower()
         if not _HEX16_RE.match(t):
             return
-        if is_email_pair_label(label):
-            tid_pair_labels.setdefault(t, set()).add(str(label).strip())
         if t in seen:
             return
         seen.add(t)
@@ -229,7 +250,7 @@ def ensure_email_link_pair(links: Any, item_key: Any = None) -> list[dict[str, s
         u = l["url"].strip()
         ref = parse_gmail_thread_ref(u)
         if ref:
-            _add_tid(ref[0], ref[1], l.get("label"))
+            _add_tid(ref[0], ref[1])
             continue
         rewritten = rewrite_gmail_link_for_display(u)
         if not is_safe_url(rewritten):
@@ -249,14 +270,8 @@ def ensure_email_link_pair(links: Any, item_key: Any = None) -> list[dict[str, s
 
     out: list[dict[str, str]] = []
     for tid, acct in tids:
-        existing = tid_pair_labels.get(tid, set())
-        # Keep · when that is what was stored (no-emoji context). Otherwise emit emoji.
-        if existing and existing <= {EMAIL_PLAIN_LABEL}:
-            dodo_lbl = gmail_lbl = EMAIL_PLAIN_LABEL
-        else:
-            dodo_lbl, gmail_lbl = EMAIL_DODO_LABEL, EMAIL_GMAIL_LABEL
-        out.append({"label": dodo_lbl, "url": dodosend_thread_url(tid, acct)})
-        out.append({"label": gmail_lbl, "url": gmail_web_url(tid, acct)})
+        out.append({"label": EMAIL_LINK_LABEL, "url": dodosend_thread_url(tid, acct)})
+        out.append({"label": EMAIL_LINK_LABEL, "url": gmail_web_url(tid, acct)})
     if not tids:
         out.extend(searches)
     out.extend(others)
@@ -347,12 +362,17 @@ def extract_flags(line: str) -> set[str]:
 
 def clean_title(text: str) -> str:
     """Extract a clean, plain text title from an item's first sentence or clause (<=160 chars)."""
-    # Replace markdown links [label](url) with label; pair-rule emoji and · labels are not title text
+    # Replace markdown links [label](url) with label; email-pair labels (space, 🍎/🤖/·,
+    # or a word like Gmail/Dodosend on a thread URL) are not title text
     def _md_link_label(m: re.Match[str]) -> str:
         label = m.group(1)
-        return "" if is_email_pair_label(label) else label
+        if is_email_pair_label(label):
+            return ""
+        if is_email_pair_word_label(label) and parse_gmail_thread_ref(m.group(2)):
+            return ""
+        return label
 
-    t = re.sub(r"\[([^\]]+)\]\([^\)]+\)", _md_link_label, text)
+    t = re.sub(r"\[([^\]]+)\]\(([^\)]+)\)", _md_link_label, text)
     # Remove markdown styling
     t = t.replace("**", "").replace("*", "").replace("`", "")
     # Remove flag tags like (new), (updated), (resolved), NEW:

@@ -6,7 +6,7 @@
     · Owner: {{ row.effective_owner }}{% if row.owner_reassigned %} (proposed {{ row.proposed_owner }}){% endif %}
   </div>
   {% if row.provenance_badges %}<div>Provenance: {% for b in row.provenance_badges %}<code>{{ b }}</code> {% endfor %}</div>{% endif %}
-  {% if row.links %}<div>{% for lk in row.links %}<a href="{{ lk.url|todo_safe_url }}" rel="noopener noreferrer" target="_blank">{{ lk.label or lk.url }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+  {% if row.links %}<div>{% for lk in row.links %}{% set fav = lk.url|email_icon %}<a href="{{ lk.url|todo_safe_url }}" rel="noopener noreferrer" target="_blank"{% if fav %} class="email-fav-link" title="{{ lk.tooltip or '' }}"{% endif %}>{% if fav %}{{ fav }}{% else %}{{ lk.label or lk.url }}{% endif %}</a>{% if not loop.last %} · {% endif %}{% endfor %}</div>{% endif %}
   <form hx-post="/todo-review/decide" hx-target="#tr-{{ row.dom_id }}" hx-swap="outerHTML">
     <input type="hidden" name="task_key" value="{{ row.task_key }}">
     <select name="owner" aria-label="Owner">{% for o in allowed_owners %}<option value="{{ o }}" {% if o == row.effective_owner %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>

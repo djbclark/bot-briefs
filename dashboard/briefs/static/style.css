@@ -1103,3 +1103,9 @@ a.row-title:hover { color: var(--accent); text-decoration: none; }
   .search-input, .search-input:focus { width: 100%; min-width: 0; }
   #submit-bar { order: 6; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 }
+
+/* Email thread pair (2026-11-15): Dodosend then Gmail favicons, vendored in /static */
+a.email-fav-link { display: inline-flex; align-items: center; text-decoration: none; opacity: 1; vertical-align: middle; }
+a.email-fav-link + a.email-fav-link { margin-left: 4px; }
+img.email-fav { width: 16px; height: 16px; display: inline-block; vertical-align: middle; border-radius: 3px; }
+a.email-fav-link:hover img.email-fav { filter: brightness(1.1); }

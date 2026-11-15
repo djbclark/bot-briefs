@@ -81,12 +81,15 @@ FTS5: reports_fts(title, body_md, content='reports', content_rowid='id') and ite
      preferred hosts: github.com, forgejo.*, *.atlassian.net/jira, mail.google.com / dodosend.com /
      dodo-link.pages.dev / dodosend://thread/<id> (use the thread id: key "gmail:<id>"),
      gerrit.*, any other non-sheet URL. Displayed email thread links are a pair:
-     [🍎](https://dodosend.com/t/<16hex>?account=<email>) then
-     [🤖](https://mail.google.com/mail/u/<email>/#all/<16hex>) (account from host
+     [ ](https://dodosend.com/t/<16hex>?account=<email>) then
+     [ ](https://mail.google.com/mail/u/<email>/#all/<16hex>) (account from host
      config; use the same mailbox in both). Items keyed gmail:<id> render this
      pair, with no text label in front of it (the surrounding sentence says what
-     the email is). Link text is 🍎 then 🤖, or a middle dot · if emoji cannot
-     be used — never words like Gmail, Dodosend, or email. Rewrite legacy
+     the email is). In markdown/chat the link text of each is a single regular
+     space (2026-11-15 rule; older 🍎/🤖, ·, and word labels like Gmail/Dodosend/
+     macOS/Android are rewritten). The web UI draws the vendored Dodosend and
+     Gmail favicons (briefs/static/favicon-*.png, alt "Dodosend"/"Gmail") as
+     the links. Rewrite legacy
      dodo-link / dodosend:// to Dodosend https; keep
      mail.google.com thread links as Gmail web. Gmail search links may stay
      mail.google.com only when no thread id is known.

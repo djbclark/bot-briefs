@@ -110,18 +110,50 @@ def test_safe_url_rewrites_legacy_thread_links_and_keeps_gmail_web():
     search = "https://mail.google.com/mail/u/0/#search/from%3Aa%40b.com"
     assert safe_url(search) == search
     from briefs.web import render_markdown
-    html = render_markdown(
-        f"Reply to Mom [🍎]({dodo}) [🤖]({gmail})"
-    )
-    assert dodo in html and gmail in html
-    assert "🍎" in html and "🤖" in html
-    assert ">Gmail<" not in html and ">Dodosend<" not in html
-    html_dot = render_markdown(
-        f"Reply to Mom [·]({dodo}) [·]({gmail})"
-    )
-    assert dodo in html_dot and gmail in html_dot
-    assert "·" in html_dot
-    assert ">Gmail<" not in html_dot and ">Dodosend<" not in html_dot
+    # 2026-11-15: every thread-pair form renders as the vendored favicons, Dodosend then Gmail.
+    for d_lbl, g_lbl in [(" ", " "), ("🍎", "🤖"), ("·", "·"), ("Dodosend", "Gmail"), ("macOS", "Android")]:
+        html = render_markdown(f"Reply to Mom [{d_lbl}]({dodo}) [{g_lbl}]({gmail})")
+        assert dodo in html and gmail in html, html
+        assert html.index(dodo) < html.index(gmail)
+        assert html.count('class="email-fav-link"') == 2, html
+        assert 'src="/static/favicon-dodosend.png" alt="Dodosend"' in html
+        assert 'src="/static/favicon-gmail.png" alt="Gmail"' in html
+        assert html.index("favicon-dodosend.png") < html.index("favicon-gmail.png")
+        for leftover in ("🍎", "🤖", "·", ">Gmail<", ">Dodosend<", ">macOS<", ">Android<"):
+            assert leftover not in html, (leftover, html)
+        assert "ssl.gstatic.com" not in html and "dodosend.com/favicon" not in html
+    # Non-email links keep their text; a word label on a non-thread link is untouched.
+    html_other = render_markdown("see [Gmail help](https://support.google.com/mail)")
+    assert ">Gmail help<" in html_other and "email-fav" not in html_other
     html_legacy = render_markdown(f"see [t](https://mail.google.com/mail/u/0/#all/{tid})")
     assert gmail in html_legacy
     assert "dodosend.com" not in html_legacy
+
+
+def test_item_row_renders_email_pair_as_local_favicons():
+    """2026-11-15: an item keyed gmail:<hex> renders Dodosend then Gmail favicons from /static."""
+    from jinja2 import Environment, FileSystemLoader
+
+    from briefs.config import REPO_ROOT
+    from briefs.parse import ensure_email_link_pair
+    from briefs.web import email_link_icon, render_markdown
+
+    tid = "0123456789abcdef"
+    env = Environment(loader=FileSystemLoader(str(REPO_ROOT / "briefs" / "templates")), autoescape=True)
+    env.filters["safe_url"] = safe_url
+    env.filters["email_icon"] = email_link_icon
+    env.filters["md"] = render_markdown
+    links = ensure_email_link_pair([{"label": "PR", "url": "https://github.com/a/b/pull/1"}], f"gmail:{tid}")
+    assert [l["label"] for l in links] == [" ", " ", "PR"]
+    item = {"item_id": 1, "display_id": "1", "title": "Reply to Mom", "links": links, "status": "pending"}
+    html = env.get_template("partials/item_row.html").render(item=item, csrf_token="x")
+    from briefs.parse import dodosend_thread_url, gmail_web_url
+
+    dodo, gmail = dodosend_thread_url(tid), gmail_web_url(tid)
+    assert html.index(dodo) < html.index(gmail)
+    assert '<img class="email-fav" src="/static/favicon-dodosend.png" alt="Dodosend"' in html
+    assert '<img class="email-fav" src="/static/favicon-gmail.png" alt="Gmail"' in html
+    assert 'title="PR"' in html  # non-email links keep the 🔗 icon with their label
+    for static in ("favicon-dodosend.png", "favicon-gmail.png"):
+        p = REPO_ROOT / "briefs" / "static" / static
+        assert p.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"

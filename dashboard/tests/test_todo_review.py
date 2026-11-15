@@ -159,7 +159,7 @@ def test_build_email_links_emits_dodosend_and_gmail_pair():
         urls = [lk["url"] for lk in out]
         assert len(out) == 2
         assert [lk["kind"] for lk in out] == ["dodosend", "gmail"]
-        assert [lk["label"] for lk in out] == ["🍎", "🤖"]
+        assert [lk["label"] for lk in out] == [" ", " "]
         assert urls[0].startswith(f"https://dodosend.com/t/{TID}?account=")
         assert urls[1].startswith("https://mail.google.com/mail/u/") and urls[1].endswith(f"/#all/{TID}")
         assert "dodosend://" not in "".join(urls)
@@ -185,7 +185,7 @@ def test_refresh_stored_legacy_links_emits_pair():
     ]
     out = tr._refresh_stored_review_links(raw)
     assert [lk["url"] for lk in out] == [CANON_OTHER, GMAIL_OTHER]
-    assert [lk["label"] for lk in out] == ["🍎", "🤖"]
+    assert [lk["label"] for lk in out] == [" ", " "]
 
 
 def test_owner_override(monkeypatch):

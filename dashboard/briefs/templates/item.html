@@ -38,7 +38,7 @@
           <strong>Source Links:</strong>
           <div class="item-links" style="margin-top: 4px;">
             {% for l in item.links %}
-              <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener">{% if l.label in ("🍎", "🤖", "·") %}{{ l.label }}{% else %}🔗 {{ l.label }}{% endif %}</a>
+              {% set fav = l.url|email_icon %}{% if fav %}<a href="{{ l.url|safe_url }}" target="_blank" rel="noopener" class="email-fav-link">{{ fav }}</a>{% else %}<a href="{{ l.url|safe_url }}" target="_blank" rel="noopener">🔗 {{ l.label }}</a>{% endif %}
             {% endfor %}
           </div>
         </div>

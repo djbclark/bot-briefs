@@ -103,7 +103,7 @@ def test_date_only_titles_do_not_collide() -> None:
 
 
 def test_gmail_thread_urls_normalize_to_gmail_keys() -> None:
-    from briefs.parse import rewrite_gmail_link_for_display, ensure_email_link_pair
+    from briefs.parse import rewrite_gmail_link_for_display, ensure_email_link_pair, email_link_kind
     tid = "1a1037c65622cc27"
     key = f"gmail:{tid}"
     account = "user@example.com"
@@ -137,7 +137,7 @@ def test_gmail_thread_urls_normalize_to_gmail_keys() -> None:
 
     pair = ensure_email_link_pair([], key)
     assert [l["url"] for l in pair] == [canon, gmail_canon]
-    assert [l["label"] for l in pair] == ["🍎", "🤖"]
+    assert [l["label"] for l in pair] == [" ", " "]
     pair2 = ensure_email_link_pair(
         [{"label": "thread", "url": f"https://dodosend.com/t/{tid}?account=other@example.com"}],
         "h:ignored",
@@ -152,15 +152,21 @@ def test_gmail_thread_urls_normalize_to_gmail_keys() -> None:
         f"Reply to Mom [·]({canon}) [·]({gmail_canon}) needs a reply"
     )
     assert title_dot == "Reply to Mom needs a reply"
-    pair_dot = ensure_email_link_pair(
-        [{"label": "·", "url": canon}, {"label": "·", "url": gmail_canon}],
-        key,
-    )
-    assert [l["label"] for l in pair_dot] == ["·", "·"]
-    assert [l["url"] for l in pair_dot] == [canon, gmail_canon]
-    pair_words = ensure_email_link_pair(
-        [{"label": "Dodosend", "url": canon}, {"label": "Gmail", "url": gmail_canon}],
-        key,
-    )
-    assert [l["label"] for l in pair_words] == ["🍎", "🤖"]
-    assert "Gmail" not in str(pair_words) and "Dodosend" not in str(pair_words) and "email" not in str(pair_words).lower()
+    title_space = clean_title(f"Reply to Mom [ ]({canon}) [ ]({gmail_canon}) needs a reply")
+    assert title_space == "Reply to Mom needs a reply"
+    title_words = clean_title(f"Reply to Mom [macOS]({canon}) [Android]({gmail_canon}) needs a reply")
+    assert title_words == "Reply to Mom needs a reply"
+    # A word label on a non-thread link is still title text.
+    assert clean_title("See [Gmail](https://example.com/help) docs") == "See Gmail docs"
+    # Every older label form (emoji, middle dot, words, space, empty) becomes the space form.
+    for d_lbl, g_lbl in [("🍎", "🤖"), ("·", "·"), ("Dodosend", "Gmail"), ("macOS", "Android"), (" ", " "), ("", "")]:
+        pair_x = ensure_email_link_pair(
+            [{"label": d_lbl, "url": canon}, {"label": g_lbl, "url": gmail_canon}],
+            key,
+        )
+        assert [l["label"] for l in pair_x] == [" ", " "], (d_lbl, pair_x)
+        assert [l["url"] for l in pair_x] == [canon, gmail_canon]
+    assert email_link_kind(canon) == "dodosend" and email_link_kind(gmail_canon) == "gmail"
+    assert email_link_kind(f"dodosend://thread/{tid}") == "dodosend"
+    assert email_link_kind("https://mail.google.com/mail/u/0/#search/x") is None
+    assert email_link_kind("https://example.com/") is None

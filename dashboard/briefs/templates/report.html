@@ -82,7 +82,7 @@
             {% if item.links %}
               <div class="item-links">
                 {% for l in item.links %}
-                  <a href="{{ l.url|safe_url }}" target="_blank" rel="noopener">{{ l.label }}</a>
+                  {% set fav = l.url|email_icon %}<a href="{{ l.url|safe_url }}" target="_blank" rel="noopener"{% if fav %} class="email-fav-link"{% endif %}>{% if fav %}{{ fav }}{% else %}{{ l.label }}{% endif %}</a>
                 {% endfor %}
               </div>
             {% endif %}

@@ -51,7 +51,15 @@ from briefs.config import (
 )
 from briefs import syncapi
 from briefs.db import connect, init_schema
-from briefs.parse import rewrite_gmail_link_for_display, safe_url, ensure_email_link_pair
+from briefs.parse import (
+    EMAIL_LINK_KINDS,
+    email_link_kind,
+    ensure_email_link_pair,
+    is_email_pair_label,
+    is_email_pair_word_label,
+    rewrite_gmail_link_for_display,
+    safe_url,
+)
 from briefs.store import (
     distinct_areas,
     get_item,
@@ -81,12 +89,43 @@ ACCESS_LOG_FILE = logs_dir() / "access.log"
 md_engine = MarkdownIt("commonmark", {"html": False}).enable("table")
 
 
+def email_link_icon(url: Any) -> Markup:
+    """Favicon <img> for a Dodosend or Gmail thread link (vendored in /static), else empty.
+
+    Email-link rule (2026-11-15): chat/markdown uses single-space link text for the pair;
+    the web dashboard shows the real Dodosend and Gmail favicons as the link instead.
+    alt/title name the app for screen readers and when the image cannot load.
+    """
+    kind = email_link_kind(url)
+    if not kind:
+        return Markup("")
+    info = EMAIL_LINK_KINDS[kind]
+    return Markup(
+        '<img class="email-fav" src="/static/{icon}" alt="{name}" title="{name}" '
+        'width="16" height="16" loading="lazy" decoding="async">'
+    ).format(icon=info["icon"], name=info["name"])
+
+
 def _render_link_open(self: Any, tokens: Any, idx: int, options: Any, env: Any) -> str:
     tokens[idx].attrs["target"] = "_blank"
     tokens[idx].attrs["rel"] = "noopener"
     href = tokens[idx].attrGet("href")
     if href:
         tokens[idx].attrs["href"] = rewrite_gmail_link_for_display(href)
+    icon = email_link_icon(href) if href else Markup("")
+    if icon:
+        # [ ](thread), [🍎]/[🤖]/[·](thread) or [Gmail](thread): draw the favicon instead of the text.
+        nxt = tokens[idx + 1] if idx + 1 < len(tokens) else None
+        label_tok = None
+        if nxt is not None and nxt.type == "text" and idx + 2 < len(tokens) and tokens[idx + 2].type == "link_close":
+            label_tok = nxt
+        empty = nxt is not None and nxt.type == "link_close"
+        if empty or (label_tok is not None and (is_email_pair_label(label_tok.content) or is_email_pair_word_label(label_tok.content))):
+            if label_tok is not None:
+                label_tok.content = ""
+            tokens[idx].attrs["class"] = "email-fav-link"
+            tokens[idx].attrs["aria-label"] = EMAIL_LINK_KINDS[email_link_kind(href)]["name"]
+            return self.renderToken(tokens, idx, options, env) + str(icon)
     return self.renderToken(tokens, idx, options, env)
 
 
@@ -131,6 +170,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     templates = Jinja2Templates(directory=str(templates_dir))
     templates.env.filters["md"] = lambda t: Markup(render_markdown(t or ""))
     templates.env.filters["safe_url"] = safe_url
+    templates.env.filters["email_icon"] = email_link_icon
 
     def get_db() -> Any:
         return connect(active_db)

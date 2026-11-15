@@ -24,7 +24,7 @@ CLOSED = ("done", "dismissed", "resolved")
 
 
 def _expand_email_links(links, key):
-    """Expand stored thread links / gmail:<tid> keys into the Dodosend + Gmail web pair."""
+    """Expand stored thread links / gmail:<tid> keys into the Dodosend + Gmail web pair (link text " ")."""
     try:
         dash = os.environ.get("BRIEFS_DASHBOARD", "/home/box/agent-data/shared/dashboard")
         if dash not in sys.path:
