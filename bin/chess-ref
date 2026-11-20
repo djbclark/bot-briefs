@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
-# Wrapper: prints the next shared base-36 post reference for Chess, e.g. "Ref: CHESS-1a"
-exec /home/box/bin/ref CHESS
+# Deprecated wrapper (kept for compatibility). Prefer: /home/box/bin/ref CHESS
+# Shared base-36 counter (rule of 2026-10-28).
+exec "$(dirname "$(readlink -f "$0")")/ref" CHESS "$@"

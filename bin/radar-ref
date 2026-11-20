@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
-# Wrapper kept for compatibility: shared base-36 counter (rule of 2026-10-28).
-exec /home/box/bin/ref RADAR
+# Deprecated wrapper (kept for compatibility). Prefer: /home/box/bin/ref RADAR
+# Shared base-36 counter (rule of 2026-10-28).
+exec "$(dirname "$(readlink -f "$0")")/ref" RADAR "$@"
