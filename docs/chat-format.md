@@ -39,6 +39,24 @@ reply "I.2 yes" or "II.1a":
 ***1.*** Renew both certificates now? (yes / later)
 ```
 
+## Lettering, a third level, and citations
+- Sub-item letters skip `i` (it reads like a Roman numeral), so they run `a` to `h`, then `j` onward. After
+  `z`, continue with `aa`, `ab`, ...
+- A third level goes in a nested quote under its sub-item, labeled with bold-italic lowercase Roman numerals:
+  `> > ***ii.*** text`.
+- To cite an item, give the post's Ref id, then the path: `CHIEF-tt I.3b.ii` (section I, item 3, sub-item b,
+  third-level ii). When replying to the latest post, the Ref id can be dropped: `I.3b.ii`.
+
+```markdown
+***3.*** Renewals this month.
+> ***a.*** Hosting.
+> > ***i.*** Plan A, $12.
+> >
+> > ***ii.*** Plan B, $20.
+>
+> ***b.*** Domain.
+```
+
 A single-section post skips the Roman numerals. The post still ends with one `Ref:` line
 ([phase-15-rules.md](phase-15-rules.md) rule 1).
 
