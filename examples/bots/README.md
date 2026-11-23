@@ -16,4 +16,5 @@ Each file is one bot's standing instructions. All are **EXAMPLE TEMPLATE, DO NOT
 - [Project Bot](project-bot.md): 
 - [One-offs](one-offs.md): 
 - [Coding](coding.md): 
+- [Maintainers](maintainers.md): 
 - [Other](other.md): 

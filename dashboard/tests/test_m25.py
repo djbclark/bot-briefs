@@ -141,7 +141,7 @@ def test_m2_migration_and_idempotence(tmp_path: Path) -> None:
 
 
 def test_filters_narrow_and_12_bots(temp_db: str) -> None:
-    """Test that each filter provably narrows results, all 12 bots in select, and HX partial returns id=item-list."""
+    """Test that each filter provably narrows results, all bots in select, and HX partial returns id=item-list."""
     conn = connect(temp_db)
     # Populate reports across multiple bots, areas, flags, due dates, statuses
     cos_bot = find_bot("cos")
@@ -190,7 +190,7 @@ def test_filters_narrow_and_12_bots(temp_db: str) -> None:
     assert r.status_code == 200
     html = r.text
 
-    # Assert ALL 12 bots in the Bot select in config order
+    # Assert ALL bots in the Bot select in config order
     for b in BOTS:
         assert f'value="{b.cli_name}"' in html, f"Missing bot option {b.cli_name}"
         assert b.name in html

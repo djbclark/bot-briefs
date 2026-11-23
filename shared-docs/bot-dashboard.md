@@ -23,6 +23,7 @@ Code, data model and ops: /home/box/agent-data/shared/dashboard/README.md
 | Project Bot | `project-bot` |
 | One-offs | `one-offs` |
 | Coding | `coding` |
+| Maintainers | `maintainers` |
 | Other | `other` |
 
 ## BOT INTEGRATION (do this every run)

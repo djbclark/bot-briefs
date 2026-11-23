@@ -81,6 +81,8 @@ def test_bot_cli_names() -> None:
         "project": "project-bot",
         "oneoffs": "one-offs",
         "coding": "coding",
+        "maintainers": "maintainers",
+        "other": "other",
     }
     for slug, cli_name in expected.items():
         bot = find_bot(slug)

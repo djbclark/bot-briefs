@@ -99,6 +99,14 @@ area_default = "code"
 cli_name = "coding"
 
 [[bots]]
+id = "00000000-0000-4000-8000-000000000014"
+slug = "maintainers"
+name = "Maintainers"
+sort = 115
+area_default = "maintainers"
+cli_name = "maintainers"
+
+[[bots]]
 id = "00000000-0000-4000-8000-000000000013"
 slug = "other"
 name = "Other"
