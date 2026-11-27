@@ -28,7 +28,7 @@ NEVER type a Ref by hand.  Verify: `scripts/verify.sh 4`.
 ```
 
 ## Notes
-Also installed with phase 4: [`bin/codex-resets-check`](../bin/codex-resets-check) and [`bin/coding-gather`](../bin/coding-gather) (Coding daily brief gather; Codex usage-limit reset reminders). See [bin/coding-gather.README.md](../bin/coding-gather.README.md). Personal `credits.json` stays in `~/.local/state/codex-resets/` and must not be synced to the public repo.
+Also installed with phase 4: [`bin/codex-resets-check`](../bin/codex-resets-check), [`bin/aiuse-underpace-check`](../bin/aiuse-underpace-check) and [`bin/coding-gather`](../bin/coding-gather) (Coding daily brief gather; Codex usage-limit reset reminders; paid AI pools under pace that reset soon). See [bin/coding-gather.README.md](../bin/coding-gather.README.md). Personal `credits.json` stays in `~/.local/state/codex-resets/` and must not be synced to the public repo.
 
 
 Ref counter: [bin/ref](../bin/ref), [bin/ref-append](../bin/ref-append). Never type a Ref by hand.

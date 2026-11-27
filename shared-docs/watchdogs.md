@@ -49,6 +49,7 @@ $M reload             # after editing conf.d
 | cline hub (127.0.0.1:25463) | monitor only | started on demand by the cline CLI, so it is not restarted |
 | watchdog-guardian | process | restarted by monit |
 | hermes-quota (`conf.d/hermes.monitrc`, `bin/wd-hermes`) | every 30 cycles (15 min) | Mac port 22 via SOCKS :1055 → `change-hermes --remote --check` (one tiny real request to Hermes' `fallback_providers[0]` route). rc 10 → `change-hermes --remote --auto`, backoff 30 min·2^(n-1), cap 4 h (`hermes-auto.runs`, 6 h window). Mac off/asleep = skip (exit 0); 04:58–05:10 ET skipped. rc 73 (busy: the Mac-side lock is held) = skip, not counted as a run. Exit 1 → monit alert only for ssh auth refused or `--auto` finding nothing |
+| nix-gc (`conf.d/nix-gc.monitrc`, `bin/wd-nix-gc` → `~/.local/bin/nix-gc`) | Sunday 04:30 local | `nix-collect-garbage --delete-older-than 14d` as the box user, then as root via `sudo -n`. Logs before/after `/nix/store` size and freed bytes to `~/.local/state/nix-gc/log`. Timeout 30 min; non-zero exit alerts. Chosen to miss the nightly backups/briefs/repo-sync window and the daily network-reboot window |
 
 **Backoff** (in `wd-svc start`): with n starts in the last 30 min, the next start must wait 30 s·2^(n-1), up to 15 min.
 A deferred start is logged and monit retries on a later cycle.
@@ -140,3 +141,14 @@ Keeps `opencli saner ...` working on the box: starts its own dedicated Chrome (p
 - Stop the old Chrome on the agent display after switching, so two Browser Bridges don't fight over the opencli daemon.
 
 Rollback: restore `wd-saner.bak-<date>`; kill the private Chrome (`ps -eo pid,args | grep '[u]ser-data-dir=/home/box/chrome-profile/opencli-private'`, the browser pid without `--type=`) and `kill $(cat ~/.local/state/watchdogs/saner-xvfb.pid)`; the next run starts `box-chrome` on the old display/profile (or set `WD_SANER_DISPLAY=:13 WD_SANER_PROFILE=<old-profile>`).
+
+## 2026-11-25: weekly Nix garbage collection
+
+The box has no systemd (PID 1 is tini) and no cron. Scheduled work already runs under user `box`'s Monit 5.34 (`set daemon 30`, drop-ins in `conf.d/`).
+
+- Script: `~/.local/bin/nix-gc` — measures `/nix/store`, runs `nix-collect-garbage --delete-older-than 14d` as the box user, then `sudo -n` with the absolute Nix path (root's PATH does not include Nix) for the system profile, logs before/after store size and freed bytes to `~/.local/state/nix-gc/log`, exits non-zero on failure. A lock file prevents overlapping runs.
+- Wrapper: `bin/wd-nix-gc` (same pattern as `wd-deadline-sweep`).
+- Schedule: `conf.d/nix-gc.monitrc`, `every "30 4 * * 0"` (Sunday 04:30 in the box's time zone). Pick a slot that avoids your backup/brief window and any known network-maintenance window.
+- These files live only in shared box state (`/home/box/agent-data/shared/watchdogs` and `~/.local/bin`).
+
+Reload after editing: `monit -c ~/.config/monit/monitrc -t && monit -c ~/.config/monit/monitrc reload`. Rollback: delete `conf.d/nix-gc.monitrc`, reload, optionally remove `bin/wd-nix-gc` and `~/.local/bin/nix-gc`.

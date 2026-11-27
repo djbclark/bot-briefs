@@ -2,12 +2,15 @@
 # repo-discover: find repos that may need adding to repo-sync.
 #  1. Local: git clones on the box outside repo-sync's roots (asks), and clones inside them (auto).
 #  2. Server: GitHub/forgejo repos the operator owns or can access that appeared since the last run.
-# State in ~/.config/repo-sync: server-seen.txt, ignore.txt (paths or owner/name to never ask about).
+# State in ~/.config/repo-sync: server-seen.txt, stubs.md (recorded but not cloned), ignore.txt (paths or owner/name to never ask about).
+# REPO_DISCOVER_DRY=1: report only, never write server-seen.txt.
 set -uo pipefail
 C="$HOME/.config/repo-sync"; mkdir -p "$C"; touch "$C/server-seen.txt" "$C/ignore.txt"
 ROOTS=(${REPO_SYNC_ROOTS:-$HOME/src /workspace $HOME/.hermes})
 inroots() { local p="$1"; for r in "${ROOTS[@]}"; do [[ "$p" == "$r"/* ]] && return 0; done; return 1; }
 ignored() { grep -qxF "$1" "$C/ignore.txt"; }
+# stubs.md format: "- id | remote | description | date | note"
+stubbed() { [ -f "$C/stubs.md" ] && awk -F' \| ' '/^- /{s=$1; sub(/^- /,"",s); print s}' "$C/stubs.md" | grep -qxF "$1"; }
 
 echo "=== LOCAL"
 find "$HOME" /workspace -xdev -maxdepth 5 -type d -name .git \
@@ -39,7 +42,8 @@ done
 cloned=$(for r in "${ROOTS[@]}"; do find "$r" -maxdepth 3 -type d -name .git 2>/dev/null; done | xargs -r -n1 dirname | while read -r d; do git -C "$d" remote get-url origin 2>/dev/null; done | sed -E 's#https://[^@/]*@#https://#; s#\.git$##; s#https://github.com/#github:#; s#https://forgejo.mit.edu/#forgejo:#')
 while read -r id rest; do
   grep -qxF "$id" "$C/server-seen.txt" && continue
-  echo "$cloned" | grep -qixF "$id" && { echo "$id" >> "$C/server-seen.txt"; continue; }
+  echo "$cloned" | grep -qixF "$id" && { [ "${REPO_DISCOVER_DRY:-0}" = 1 ] || echo "$id" >> "$C/server-seen.txt"; continue; }
+  stubbed "$id" && { [ "${REPO_DISCOVER_DRY:-0}" = 1 ] || echo "$id" >> "$C/server-seen.txt"; continue; }
   ignored "$id" || echo "NEW_SERVER_REPO $id $rest"
   [ "${REPO_DISCOVER_SEED:-0}" = 1 ] && echo "$id" >> "$C/server-seen.txt"
 done < "$tmp"

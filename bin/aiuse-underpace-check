@@ -1,0 +1,467 @@
+#!/usr/bin/env python3
+"""aiuse-underpace-check: flag paid usage pools significantly under pace and resetting soon.
+
+Deterministic Python 3 stdlib-only script. Reads `aiuse --json` (or --usage-json FILE)
+and highlights subscription pools that risk losing already-paid quota at reset.
+
+Usage:
+    aiuse-underpace-check [--usage-json FILE] [--now ISO] [--json] [--config FILE]
+       [--reset-within-hours H] [--projected-below PCT] [--under-pace-points PTS]
+       [--min-window-hours H] [--selftest]
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tomllib
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
+DEFAULT_CONFIG = Path.home() / ".config" / "aiuse-underpace" / "config.toml"
+AIUSE_TIMEOUT_SECONDS = 120
+
+DEFAULT_THRESHOLDS: dict[str, Any] = {
+    "reset_within_hours": 72,
+    "projected_below": 70,
+    "under_pace_points": 30,
+    "min_window_hours": 24,
+    "ignore": [],
+    "include_billing_kinds": ["subscription_window"],
+}
+
+
+def parse_dt(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp into a timezone-aware datetime (UTC if naive)."""
+    if not value or not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def now_from(arg: str | None = None) -> datetime:
+    """Return an aware datetime from an ISO-8601 string, or current UTC time."""
+    if arg is None or (isinstance(arg, str) and not arg.strip()):
+        return datetime.now(timezone.utc)
+    dt = parse_dt(arg)
+    if dt is None:
+        raise ValueError(f"invalid --now timestamp: {arg!r}")
+    return dt
+
+
+def fmt_et(dt: datetime) -> str:
+    """Format an aware datetime in America/New_York like 'Sat Nov 28, 7:25 AM ET'."""
+    local = dt.astimezone(ET)
+    hour = local.strftime("%I").lstrip("0") or "12"
+    return f"{local.strftime('%a %b')} {local.day}, {hour}:{local.strftime('%M %p')} ET"
+
+
+def iso_utc(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _num(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _fmt_num(value: float | int) -> str:
+    if isinstance(value, int) or (isinstance(value, float) and value.is_integer()):
+        return str(int(value))
+    return f"{value:g}"
+
+
+def load_config(path: Path | None = None) -> dict[str, Any]:
+    """Load thresholds config from TOML, falling back to defaults if file is missing."""
+    cfg: dict[str, Any] = {
+        "reset_within_hours": DEFAULT_THRESHOLDS["reset_within_hours"],
+        "projected_below": DEFAULT_THRESHOLDS["projected_below"],
+        "under_pace_points": DEFAULT_THRESHOLDS["under_pace_points"],
+        "min_window_hours": DEFAULT_THRESHOLDS["min_window_hours"],
+        "ignore": list(DEFAULT_THRESHOLDS["ignore"]),
+        "include_billing_kinds": list(DEFAULT_THRESHOLDS["include_billing_kinds"]),
+    }
+    config_path = path if path is not None else DEFAULT_CONFIG
+    if not config_path.is_file():
+        return cfg
+
+    with config_path.open("rb") as fh:
+        raw = tomllib.load(fh)
+
+    section = raw.get("thresholds") if isinstance(raw.get("thresholds"), dict) else {}
+
+    for key in ("reset_within_hours", "projected_below", "under_pace_points", "min_window_hours"):
+        if key in section:
+            val = _num(section[key])
+            if val is not None:
+                cfg[key] = int(val) if val.is_integer() and isinstance(section[key], int) else val
+        elif key in raw:
+            val = _num(raw[key])
+            if val is not None:
+                cfg[key] = int(val) if val.is_integer() and isinstance(raw[key], int) else val
+
+    for list_key in ("ignore", "include_billing_kinds"):
+        source_val = None
+        if list_key in section:
+            source_val = section[list_key]
+        elif list_key in raw:
+            source_val = raw[list_key]
+        if isinstance(source_val, list):
+            cfg[list_key] = [str(x).strip() for x in source_val if str(x).strip()]
+
+    return cfg
+
+
+def _normalize_thresholds(thresholds: dict[str, Any] | None) -> dict[str, Any]:
+    merged: dict[str, Any] = {
+        "reset_within_hours": DEFAULT_THRESHOLDS["reset_within_hours"],
+        "projected_below": DEFAULT_THRESHOLDS["projected_below"],
+        "under_pace_points": DEFAULT_THRESHOLDS["under_pace_points"],
+        "min_window_hours": DEFAULT_THRESHOLDS["min_window_hours"],
+        "ignore": list(DEFAULT_THRESHOLDS["ignore"]),
+        "include_billing_kinds": list(DEFAULT_THRESHOLDS["include_billing_kinds"]),
+    }
+    if thresholds:
+        for k, v in thresholds.items():
+            if v is not None:
+                if k in ("ignore", "include_billing_kinds"):
+                    merged[k] = [str(x).strip() for x in v if str(x).strip()]
+                else:
+                    merged[k] = v
+    return merged
+
+
+def _extract_accounts(data: Any) -> list[dict[str, Any]]:
+    if not isinstance(data, dict):
+        return []
+    snap = data.get("snapshot")
+    if isinstance(snap, dict) and isinstance(snap.get("accounts"), list):
+        return [a for a in snap["accounts"] if isinstance(a, dict)]
+    if isinstance(data.get("accounts"), list):
+        return [a for a in data["accounts"] if isinstance(a, dict)]
+    return []
+
+
+def evaluate(
+    data: dict[str, Any],
+    now: datetime,
+    thresholds: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Evaluate aiuse JSON data and return flagged under-pace pool items."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    cfg = _normalize_thresholds(thresholds)
+    reset_within_hours = float(cfg["reset_within_hours"])
+    projected_below = float(cfg["projected_below"])
+    under_pace_points = float(cfg["under_pace_points"])
+    min_window_minutes = float(cfg["min_window_hours"]) * 60.0
+    ignore_set = {s.lower() for s in cfg["ignore"]}
+    allowed_billing = {s.lower() for s in cfg["include_billing_kinds"]}
+
+    max_reset_dt = now + timedelta(hours=reset_within_hours)
+    items: list[dict[str, Any]] = []
+
+    for acct in _extract_accounts(data):
+        if acct.get("error"):
+            continue
+        # Operator-gated (ask before spending) and lapsed accounts are never "use it up" targets.
+        if acct.get("requires_operator_approval") or acct.get("operator_gated") or acct.get("lapsed"):
+            continue
+
+        billing_kind = str(acct.get("billing_kind") or "").strip().lower()
+        if billing_kind not in allowed_billing:
+            continue
+
+        provider = str(acct.get("provider") or "").strip()
+        if not provider:
+            continue
+        if provider.lower() in ignore_set:
+            continue
+
+        account_raw = acct.get("account")
+        account = str(account_raw).strip() if account_raw is not None and str(account_raw).strip() else None
+
+        windows = acct.get("windows")
+        if not isinstance(windows, list):
+            continue
+
+        for win in windows:
+            if not isinstance(win, dict):
+                continue
+
+            used_pct = _num(win.get("used_percent"))
+            if used_pct is None or used_pct >= 100.0:
+                continue
+
+            window_minutes = _num(win.get("window_minutes"))
+            if window_minutes is None or window_minutes <= 0 or window_minutes < min_window_minutes:
+                continue
+
+            resets_at_raw = win.get("resets_at")
+            resets_dt = parse_dt(resets_at_raw if isinstance(resets_at_raw, str) else None)
+            if resets_dt is None:
+                continue
+
+            if not (now < resets_dt <= max_reset_dt):
+                continue
+
+            window_id = str(win.get("window_id") or "").strip()
+            label = str(win.get("label") or window_id or "window").strip()
+            key_window = window_id or label
+
+            if window_id and f"{provider}/{window_id}".lower() in ignore_set:
+                continue
+
+            window_start = resets_dt - timedelta(minutes=window_minutes)
+            elapsed_minutes = (now - window_start).total_seconds() / 60.0
+            elapsed_pct = max(0.0, min(100.0, 100.0 * elapsed_minutes / window_minutes))
+
+            if elapsed_pct > 0.0:
+                projected: float | None = min(999.0, used_pct / (elapsed_pct / 100.0))
+            else:
+                projected = None
+
+            under_points = elapsed_pct - used_pct
+
+            flagged = (projected is not None and projected < projected_below) or (
+                under_points > under_pace_points
+            )
+            if not flagged:
+                continue
+
+            hours_left = (resets_dt - now).total_seconds() / 3600.0
+            unused_pct = max(0, round(100.0 - used_pct))
+            hint = str(win.get("models_hint") or "").strip()
+            suggestion = (
+                f"{unused_pct}% is still unused; route bulk work to {provider} {label} before it resets"
+                + (f" ({hint})." if hint else ".")
+            )
+
+            items.append(
+                {
+                    "key": f"aiuse-underpace:{provider}:{account or '-'}:{key_window}",
+                    "provider": provider,
+                    "account": account,
+                    "window_id": window_id or None,
+                    "label": label,
+                    "used_percent": round(used_pct, 1),
+                    "elapsed_pct": round(elapsed_pct, 1),
+                    "projected_pct": round(projected, 1) if projected is not None else None,
+                    "under_points": round(under_points, 1),
+                    "resets_at": str(resets_at_raw).strip(),
+                    "resets_et": fmt_et(resets_dt),
+                    "hours_left": round(hours_left, 1),
+                    "models_hint": hint or None,
+                    "suggestion": suggestion,
+                }
+            )
+
+    items.sort(key=lambda i: (i["hours_left"], i["provider"], i["account"] or "", i["key"]))
+    return items
+
+
+def render_markdown(
+    items: list[dict[str, Any]],
+    now: datetime,
+    thresholds: dict[str, Any] | None = None,
+) -> str:
+    """Render flagged under-pace pools as markdown."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    cfg = _normalize_thresholds(thresholds)
+
+    lines = [f"# aiuse under-pace pools ({fmt_et(now)})", ""]
+    if items:
+        for item in items:
+            who = f"{item['provider']} {item['account']}" if item.get("account") else item["provider"]
+            lines.append(
+                f"- **{who} — {item['label']}**: "
+                f"{item['used_percent']:.1f}% used, "
+                f"{item['elapsed_pct']:.1f}% of window elapsed, "
+                f"resets {item['resets_et']} ({item['hours_left']:.1f}h). "
+                f"{item['suggestion']}"
+            )
+    else:
+        lines.append("No paid pools are significantly under pace and resetting soon.")
+
+    lines.append("")
+    lines.append(
+        "Thresholds: "
+        f"reset within {_fmt_num(cfg['reset_within_hours'])}h, "
+        f"projected below {_fmt_num(cfg['projected_below'])}%, "
+        f"under-pace > {_fmt_num(cfg['under_pace_points'])} pts, "
+        f"min window {_fmt_num(cfg['min_window_hours'])}h."
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _find_aiuse() -> str | None:
+    found = shutil.which("aiuse")
+    if found:
+        return found
+    fallback = Path.home() / ".local" / "bin" / "aiuse"
+    if fallback.is_file() and os.access(fallback, os.X_OK):
+        return str(fallback)
+    return None
+
+
+def load_usage_data(usage_json_path: str | None) -> dict[str, Any]:
+    if usage_json_path is not None:
+        p = Path(usage_json_path)
+        if not p.is_file():
+            raise RuntimeError(f"usage JSON file not found: {p}")
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"failed to parse usage JSON {p}: {exc}") from exc
+        if not isinstance(data, dict):
+            raise RuntimeError(f"usage JSON must be an object: {p}")
+        return data
+
+    exe = _find_aiuse()
+    if not exe:
+        raise RuntimeError("aiuse binary not found on PATH or at ~/.local/bin/aiuse")
+    try:
+        proc = subprocess.run(
+            [exe, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=AIUSE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"aiuse --json timed out after {AIUSE_TIMEOUT_SECONDS}s") from exc
+    except OSError as exc:
+        raise RuntimeError(f"failed to execute {exe}: {exc}") from exc
+
+    if proc.returncode != 0:
+        err_tail = (proc.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
+        raise RuntimeError(f"aiuse --json exited with status {proc.returncode}: {err_tail[0]}")
+
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"aiuse --json produced invalid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("aiuse --json output must be a JSON object")
+    return data
+
+
+def selftest() -> int:
+    import unittest
+
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parent.parent / "tests" / "test_aiuse_underpace_check.py",
+    ]
+    test_path = next((p for p in candidates if p.is_file()), None)
+    if test_path is None:
+        print(
+            "aiuse-underpace-check --selftest: tests/test_aiuse_underpace_check.py not found",
+            file=sys.stderr,
+        )
+        return 1
+
+    spec = importlib.util.spec_from_file_location("test_aiuse_underpace_check", test_path)
+    if spec is None or spec.loader is None:
+        print(f"aiuse-underpace-check --selftest: cannot load {test_path}", file=sys.stderr)
+        return 1
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    suite = unittest.TestLoader().loadTestsFromModule(mod)
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    return 0 if result.wasSuccessful() else 1
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="aiuse-underpace-check",
+        description="Flag paid aiuse pools that are significantly under pace and resetting soon.",
+    )
+    ap.add_argument("--usage-json", help="Path to aiuse --json snapshot file (skips running aiuse)")
+    ap.add_argument("--now", help="ISO-8601 timestamp override for current time")
+    ap.add_argument("--json", action="store_true", help="Print JSON payload to stdout")
+    ap.add_argument("--config", help="Path to TOML config file (default ~/.config/aiuse-underpace/config.toml)")
+    ap.add_argument("--reset-within-hours", type=float, default=None, help="Only check windows resetting within H hours")
+    ap.add_argument("--projected-below", type=float, default=None, help="Flag if projected end-of-window usage is below PCT")
+    ap.add_argument("--under-pace-points", type=float, default=None, help="Flag if elapsed_pct - used_percent > PTS")
+    ap.add_argument("--min-window-hours", type=float, default=None, help="Ignore windows shorter than H hours")
+    ap.add_argument("--selftest", action="store_true", help="Run the unit test suite")
+    return ap
+
+
+def run(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    if args.selftest:
+        return selftest()
+
+    try:
+        now = now_from(args.now)
+    except ValueError as exc:
+        print(f"aiuse-underpace-check: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        config_path = Path(args.config) if args.config else None
+        thresholds = load_config(config_path)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        print(f"aiuse-underpace-check: config error: {exc}", file=sys.stderr)
+        return 2
+
+    for flag_name in ("reset_within_hours", "projected_below", "under_pace_points", "min_window_hours"):
+        val = getattr(args, flag_name)
+        if val is not None:
+            thresholds[flag_name] = int(val) if val.is_integer() else val
+
+    try:
+        data = load_usage_data(args.usage_json)
+    except RuntimeError as exc:
+        print(f"aiuse-underpace-check: {exc}", file=sys.stderr)
+        return 1
+
+    items = evaluate(data, now, thresholds)
+    markdown = render_markdown(items, now, thresholds)
+
+    if args.json:
+        payload = {
+            "now": iso_utc(now),
+            "now_et": fmt_et(now),
+            "thresholds": thresholds,
+            "items": items,
+            "markdown": markdown,
+        }
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+    else:
+        sys.stdout.write(markdown)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(run())
+    except BrokenPipeError:
+        sys.exit(0)

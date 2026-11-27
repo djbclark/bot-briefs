@@ -1,0 +1,16 @@
+# ~/.config/aiuse-underpace/config.toml — thresholds for bin/aiuse-underpace-check.
+# Every key is optional; CLI flags (--reset-within-hours etc.) override this file.
+
+[thresholds]
+# Only look at windows that reset within this many hours.
+reset_within_hours = 72
+# Flag when projected end-of-window use (used% / elapsed%) is below this percent...
+projected_below = 70
+# ...or when used% trails linear pace (elapsed%) by more than this many points.
+under_pace_points = 30
+# Skip short windows (5-hour windows refill constantly).
+min_window_hours = 24
+# "provider" or "provider/window_id" entries to never flag.
+ignore = []
+# aiuse billing kinds that count as paid, expiring pools.
+include_billing_kinds = ["subscription_window"]

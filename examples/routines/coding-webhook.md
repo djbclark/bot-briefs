@@ -2,6 +2,8 @@
 
 > EXAMPLE TEMPLATE (mostly generic). Adapt bot names/paths.
 
+> **Update 2026-11-26:** acp-run was removed from the reference box. Step 3 below is the older acp-run reply path; the current reply path is a `peer-link` mailbox send (see [shared-docs/agent-webhook/coding/routine-prompt.md](../../shared-docs/agent-webhook/coding/routine-prompt.md)). Keep the same untrusted-payload rules either way.
+
 ````text
 # DRAFT: Coding bot webhook routine prompt
 

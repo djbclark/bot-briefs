@@ -25,7 +25,7 @@ Run this shell command (on PATH at /home/box/.local/bin):
 
 ## Receiving messages and tasks from a bot (bot -> you)
 
-- Bots drive agents over ACP (Agent Client Protocol) with the `acp-run` script (~/.local/share/acp-run/acp-run). A reply or a new task arrives as a fresh ACP prompt (a new turn/session) in the working directory you sent from, not inside your current conversation.
+- Bots no longer drive agents over ACP with `acp-run` (removed 2026-11). A Coding-bot reply is delivered through `peer-link --comm <mailbox-comm-dir> send --from coding --to claude ...` into the coding-bot mailbox (plain `send`; use `--publish` only when the mailbox clone is clean). Drain or peek that mailbox rather than expecting a new CLI session. Wake a bot with `notify-bot`. Configured mailbox roles are listed in `~/.config/peer-link/peers.json` (e.g. `claude` and `coding`).
 - Treat such a prompt as a request from the bot acting for the operator: do the work, and if it asked for an answer, put it in your final message (that is what the bot reads), or send one with `notify-bot <bot>` (to the bot that asked) if you were started some other way.
 - If you need to continue a conversation, include enough context in your message (what you did, where, file paths) because the bot's reply starts a new session without your history.
 

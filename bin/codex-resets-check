@@ -1,0 +1,768 @@
+#!/usr/bin/env python3
+"""codex-resets-check: deterministic Coding-brief items for Codex usage-limit reset credits.
+
+Tracks ChatGPT Codex subscription "Usage limit resets" credits (openai/codex rate limit),
+not the OpenAI API prepaid balance. Python 3 stdlib only; no model calls.
+
+State:  ~/.local/state/codex-resets/credits.json
+Usage:  aiuse --json, or `codexbar usage --provider codex --json`, or a Mac/box
+        snapshot under ~/.local/state (see --usage-json).
+
+    codex-resets-check [--now ISO] [--state FILE] [--usage-json FILE] [--no-live]
+                       [--json] [--write-state] [--selftest]
+
+Exit 0 always when the check itself ran (including "no items today"). Exit 2 on
+bad input or missing state; 1 on an unexpected failure.
+
+Do not put personal expiry dates or credits.json in a public repo.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
+HOME = Path.home()
+DEFAULT_STATE = Path(
+    os.environ.get("CODEX_RESETS_STATE", HOME / ".local/state/codex-resets/credits.json")
+)
+EXPIRING_HOURS = 72
+DRAIN_HOURS = 7 * 24
+USE_RESET_USED_PCT = 80.0
+WAIT_FOR_WEEKLY_HOURS = 36
+LIVE_TIMEOUT = 45
+CODEX_PROVIDERS = {"codex"}
+CODEX_POOLS = {"openai:codex", "openai/codex"}
+USAGE_GLOBS = (
+    HOME / ".local/state/aiuse/latest.json",
+    HOME / ".local/state/aiuse/last.json",
+    HOME / ".local/state/aiuse/mac.json",
+    HOME / ".local/state/aiuse/usage.json",
+    HOME / ".local/state/repo-sync/aiuse.json",
+    HOME / ".local/state/repo-sync/mac-aiuse.json",
+    HOME / ".local/state/codex-resets/usage.json",
+)
+
+# ---------------------------------------------------------------------------
+# time
+# ---------------------------------------------------------------------------
+
+
+def parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def now_from(arg: str | None) -> datetime:
+    env = os.environ.get("CODEX_RESETS_NOW")
+    raw = arg or env
+    if raw:
+        dt = parse_dt(raw)
+        if dt is None:
+            raise SystemExit(f"codex-resets-check: bad --now / CODEX_RESETS_NOW: {raw!r}")
+        return dt.astimezone(ET)
+    return datetime.now(ET)
+
+
+def fmt_et(dt: datetime) -> str:
+    local = dt.astimezone(ET)
+    hour = local.strftime("%I").lstrip("0") or "0"
+    return f"{local.strftime('%a %b')} {local.day}, {local.year} at {hour}:{local.strftime('%M %p')} ET"
+
+
+def iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------------------
+# state
+# ---------------------------------------------------------------------------
+
+
+def load_state(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise SystemExit(f"codex-resets-check: state file missing: {path}")
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"codex-resets-check: invalid JSON in {path}: {e}") from e
+    if not isinstance(data, dict) or not isinstance(data.get("credits"), list):
+        raise SystemExit(f"codex-resets-check: {path} must be an object with a credits list")
+    return data
+
+
+def credit_id(credit: dict[str, Any]) -> str:
+    return str(credit.get("id") or credit.get("expires_at") or "")
+
+
+def credit_expiry(credit: dict[str, Any]) -> datetime | None:
+    return parse_dt(credit.get("expires_at") or credit.get("id"))
+
+
+def effective_status(credit: dict[str, Any], now: datetime) -> str:
+    status = str(credit.get("status") or "unused").lower()
+    if status == "used":
+        return "used"
+    exp = credit_expiry(credit)
+    if exp is not None and now >= exp.astimezone(ET):
+        return "expired"
+    return status if status in {"unused", "expired"} else "unused"
+
+
+def apply_expired(state: dict[str, Any], now: datetime) -> bool:
+    changed = False
+    for credit in state["credits"]:
+        if effective_status(credit, now) == "expired" and str(credit.get("status")).lower() != "expired":
+            if str(credit.get("status")).lower() != "used":
+                credit["status"] = "expired"
+                credit["expired_detected_at"] = iso(now)
+                changed = True
+    return changed
+
+
+def maybe_mark_used_from_count(state: dict[str, Any], available: int | None, now: datetime) -> bool:
+    """If live availableCount is below unused-and-unexpired credits, mark the soonest as used."""
+    if available is None or available < 0:
+        return False
+    unused = [c for c in state["credits"] if effective_status(c, now) == "unused"]
+    unused.sort(key=lambda c: credit_expiry(c) or datetime.max.replace(tzinfo=timezone.utc))
+    if len(unused) <= available:
+        return False
+    changed = False
+    for credit in unused[: len(unused) - available]:
+        credit["status"] = "used"
+        credit["used_detected_at"] = iso(now)
+        credit["used_source"] = "availableCount"
+        changed = True
+    return changed
+
+
+def write_state(path: Path, state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=False) + "\n")
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+
+
+# ---------------------------------------------------------------------------
+# usage snapshots
+# ---------------------------------------------------------------------------
+
+
+def _num(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip().rstrip("%"))
+        except ValueError:
+            return None
+    return None
+
+
+def _is_codex_account(account: dict[str, Any]) -> bool:
+    provider = str(account.get("provider") or account.get("provider_id") or "").lower()
+    pool = str(account.get("pool_id") or account.get("service_id") or "").lower()
+    billing = str(account.get("billing_kind") or "").lower()
+    if billing in {"payg_api", "prepaid", "api"}:
+        return False
+    if provider in {"openai-api", "openai_api", "pi"}:
+        return False
+    if pool in {p.lower() for p in CODEX_POOLS}:
+        return True
+    if provider in CODEX_PROVIDERS and "api" not in provider:
+        return True
+    return False
+
+
+def _note_available_count(notes: list[Any]) -> int | None:
+    pat = re.compile(
+        r"(?:Codex (?:limit-reset |reset )?credits?(?: available)?:|availableCount)\s*(\d+)",
+        re.I,
+    )
+    for note in notes:
+        if not isinstance(note, str):
+            continue
+        m = pat.search(note)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def _windows_from_account(account: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for win in account.get("windows") or []:
+        if not isinstance(win, dict):
+            continue
+        used = _num(win.get("used_percent"))
+        remaining = _num(win.get("remaining_percent"))
+        if used is None and remaining is not None:
+            used = 100.0 - remaining
+        if remaining is None and used is not None:
+            remaining = 100.0 - used
+        out.append(
+            {
+                "label": win.get("label") or win.get("window_id") or "window",
+                "window_id": win.get("window_id"),
+                "used_percent": used,
+                "remaining_percent": remaining,
+                "resets_at": win.get("resets_at") or win.get("resetsAt"),
+                "window_minutes": win.get("window_minutes") or win.get("windowMinutes"),
+                "reset_description": win.get("reset_description") or win.get("resetDescription"),
+            }
+        )
+    return out
+
+
+def _is_weekly(win: dict[str, Any]) -> bool:
+    label = str(win.get("label") or win.get("window_id") or "").lower()
+    minutes = win.get("window_minutes")
+    if minutes is not None:
+        try:
+            m = float(minutes)
+            if 9000 <= m <= 11000:  # ~7 days
+                return True
+        except (TypeError, ValueError):
+            pass
+    return "week" in label
+
+
+def extract_codex_usage(doc: Any, source: str) -> dict[str, Any] | None:
+    if not isinstance(doc, dict):
+        return None
+    accounts: list[Any] = []
+    if isinstance(doc.get("snapshot"), dict) and isinstance(doc["snapshot"].get("accounts"), list):
+        accounts = doc["snapshot"]["accounts"]
+        collected = doc["snapshot"].get("collected_at") or doc.get("collected_at")
+    elif isinstance(doc.get("accounts"), list):
+        accounts = doc["accounts"]
+        collected = doc.get("collected_at")
+    else:
+        # raw CodexBar payload
+        usage = doc.get("usage") if isinstance(doc.get("usage"), dict) else doc
+        reset = usage.get("codexResetCredits") if isinstance(usage, dict) else None
+        avail = None
+        if isinstance(reset, dict) and reset.get("availableCount") is not None:
+            try:
+                avail = int(reset["availableCount"])
+            except (TypeError, ValueError):
+                avail = None
+        windows = []
+        limits = None
+        if isinstance(usage, dict):
+            limits = usage.get("rateLimit") or usage.get("rateLimits") or usage.get("limits") or usage.get("windows")
+        if isinstance(limits, list):
+            for win in limits:
+                if isinstance(win, dict):
+                    used = _num(win.get("used_percent") or win.get("usedPercent") or win.get("percentUsed"))
+                    remaining = _num(win.get("remaining_percent") or win.get("remainingPercent"))
+                    windows.append(
+                        {
+                            "label": win.get("label") or win.get("name") or "window",
+                            "used_percent": used,
+                            "remaining_percent": remaining if remaining is not None or used is None else 100.0 - used,
+                            "resets_at": win.get("resetsAt") or win.get("resets_at"),
+                            "window_minutes": win.get("windowMinutes") or win.get("window_minutes"),
+                        }
+                    )
+        if avail is None and not windows:
+            return None
+        used = None
+        remaining = None
+        if windows:
+            constraining = max(
+                (w for w in windows if w.get("used_percent") is not None),
+                key=lambda w: w["used_percent"],
+                default=None,
+            )
+            if constraining:
+                used = constraining["used_percent"]
+                remaining = constraining.get("remaining_percent")
+        return {
+            "provider": "codex",
+            "used_percent": used,
+            "remaining_percent": remaining,
+            "available_count": avail,
+            "windows": windows,
+            "source": source,
+            "collected_at": collected if "collected" in dir() else doc.get("collected_at"),
+            "error": None,
+        }
+
+    found: dict[str, Any] | None = None
+    for account in accounts:
+        if not isinstance(account, dict) or not _is_codex_account(account):
+            continue
+        windows = _windows_from_account(account)
+        notes = account.get("notes") or []
+        avail = _note_available_count(notes if isinstance(notes, list) else [])
+        used = None
+        remaining = None
+        binding = account.get("binding_window")
+        if binding:
+            for win in windows:
+                if win.get("label") == binding and win.get("used_percent") is not None:
+                    used = win["used_percent"]
+                    remaining = win.get("remaining_percent")
+                    break
+        if used is None:
+            constraining = max(
+                (w for w in windows if w.get("used_percent") is not None),
+                key=lambda w: w["used_percent"],
+                default=None,
+            )
+            if constraining:
+                used = constraining["used_percent"]
+                remaining = constraining.get("remaining_percent")
+        error = account.get("error")
+        if used is None and not windows and not avail and error:
+            # still return so the brief can say usage is unavailable
+            found = {
+                "provider": "codex",
+                "used_percent": None,
+                "remaining_percent": None,
+                "available_count": avail,
+                "windows": windows,
+                "source": source,
+                "collected_at": account.get("collected_at") or collected,
+                "error": error,
+            }
+            continue
+        found = {
+            "provider": "codex",
+            "used_percent": used,
+            "remaining_percent": remaining,
+            "available_count": avail,
+            "windows": windows,
+            "source": source,
+            "collected_at": account.get("collected_at") or collected,
+            "error": error,
+        }
+        if used is not None or windows or avail is not None:
+            break
+    return found
+
+
+def weekly_window(usage: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not usage:
+        return None
+    weeks = [w for w in usage.get("windows") or [] if _is_weekly(w)]
+    if not weeks:
+        return None
+    # prefer one with a resets_at
+    for win in weeks:
+        if parse_dt(win.get("resets_at")):
+            return win
+    return weeks[0]
+
+
+def load_usage_file(path: Path, source: str | None = None) -> dict[str, Any] | None:
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return extract_codex_usage(doc, source or str(path))
+
+
+def run_live_usage() -> dict[str, Any] | None:
+    env = {**os.environ, "NO_COLOR": "1"}
+    aiuse = shutil.which("aiuse") or str(HOME / ".local/bin/aiuse")
+    if os.path.isfile(aiuse):
+        try:
+            p = subprocess.run(
+                [aiuse, "--json", "--once"],
+                capture_output=True,
+                text=True,
+                timeout=LIVE_TIMEOUT,
+                env=env,
+            )
+            if p.stdout:
+                got = extract_codex_usage(json.loads(p.stdout), "aiuse --json")
+                if got and (got.get("used_percent") is not None or got.get("windows") or got.get("available_count") is not None):
+                    return got
+                if got:
+                    # keep as fallback if CodexBar also fails
+                    fallback = got
+                else:
+                    fallback = None
+            else:
+                fallback = None
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+            fallback = None
+    else:
+        fallback = None
+    bar = shutil.which("codexbar") or str(HOME / ".local/bin/codexbar")
+    if os.path.isfile(bar):
+        try:
+            p = subprocess.run(
+                [bar, "usage", "--provider", "codex", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=LIVE_TIMEOUT,
+                env=env,
+            )
+            if p.stdout:
+                got = extract_codex_usage(json.loads(p.stdout), "codexbar usage --provider codex")
+                if got and (got.get("used_percent") is not None or got.get("windows") or got.get("available_count") is not None):
+                    return got
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+            pass
+    return fallback
+
+
+def discover_usage(explicit: Path | None, live: bool, state: dict[str, Any]) -> dict[str, Any] | None:
+    if explicit is not None:
+        if not explicit.is_file():
+            raise SystemExit(f"codex-resets-check: usage JSON missing: {explicit}")
+        got = load_usage_file(explicit, f"--usage-json {explicit}")
+        if got:
+            return got
+    env_path = os.environ.get("CODEX_RESETS_USAGE_JSON")
+    if env_path:
+        p = Path(env_path)
+        if p.is_file():
+            got = load_usage_file(p, f"CODEX_RESETS_USAGE_JSON={p}")
+            if got:
+                return got
+    if live:
+        got = run_live_usage()
+        if got and (got.get("used_percent") is not None or got.get("windows") or got.get("available_count") is not None):
+            return got
+        live_err = got
+    else:
+        live_err = None
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for path in USAGE_GLOBS:
+        if path.is_file():
+            got = load_usage_file(path)
+            if got and (got.get("used_percent") is not None or got.get("windows")):
+                collected = parse_dt(got.get("collected_at"))
+                stamp = (collected or datetime.fromtimestamp(path.stat().st_mtime, tz=ET)).timestamp()
+                candidates.append((stamp, got))
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
+    last = state.get("last_usage")
+    if isinstance(last, dict) and (
+        last.get("used_percent") is not None or last.get("windows") or last.get("remaining_percent") is not None
+    ):
+        used = _num(last.get("used_percent"))
+        remaining = _num(last.get("remaining_percent"))
+        if used is None and remaining is not None:
+            used = 100.0 - remaining
+        if remaining is None and used is not None:
+            remaining = 100.0 - used
+        return {
+            "provider": last.get("provider") or "openai/codex",
+            "used_percent": used,
+            "remaining_percent": remaining,
+            "available_count": last.get("available_count"),
+            "windows": last.get("windows") or [],
+            "source": last.get("source") or "credits.json last_usage",
+            "collected_at": last.get("recorded_at") or last.get("collected_at"),
+            "error": None,
+        }
+    return live_err
+
+
+# ---------------------------------------------------------------------------
+# items
+# ---------------------------------------------------------------------------
+
+
+def weekly_note(usage: dict[str, Any] | None, credit_exp: datetime | None, now: datetime) -> tuple[str, datetime | None]:
+    win = weekly_window(usage)
+    if not win:
+        return "", None
+    resets = parse_dt(win.get("resets_at"))
+    label = win.get("label") or "weekly window"
+    used = win.get("used_percent")
+    used_bit = f", currently {used:.0f}% used" if isinstance(used, float) else ""
+    if resets is None:
+        return f" A Codex {label} is tracked{used_bit}, but its reset time is unknown.", None
+    when = fmt_et(resets)
+    hours = (resets.astimezone(ET) - now).total_seconds() / 3600
+    if credit_exp is not None and resets.astimezone(ET) < credit_exp.astimezone(ET):
+        return (
+            f" The Codex weekly window resets {when}{used_bit}, before this credit expires."
+            " A natural weekly reset would bring that window back to 0%; to use the credit,"
+            f" drain the new weekly window after that reset and before {fmt_et(credit_exp)}.",
+            resets,
+        )
+    if hours > 0:
+        return (
+            f" The Codex weekly window does not reset until {when}{used_bit}"
+            + (
+                f", after this credit expires, so a natural weekly reset will not replace it."
+                if credit_exp is not None
+                else "."
+            ),
+            resets,
+        )
+    return f" The Codex weekly window reset time is {when}{used_bit}.", resets
+
+
+def build_items(
+    state: dict[str, Any],
+    usage: dict[str, Any] | None,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    credits = list(state["credits"])
+    unused = []
+    expired_today = []
+    for credit in credits:
+        status = effective_status(credit, now)
+        exp = credit_expiry(credit)
+        if status == "unused" and exp is not None:
+            unused.append(credit)
+        elif status == "expired" and exp is not None:
+            # mention a credit that expired in the last 24h and was not used
+            if 0 <= (now - exp.astimezone(ET)).total_seconds() <= 24 * 3600:
+                if str(credit.get("status")).lower() != "used":
+                    expired_today.append(credit)
+    unused.sort(key=lambda c: credit_expiry(c) or datetime.max.replace(tzinfo=timezone.utc))
+
+    used_pct = usage.get("used_percent") if usage else None
+    remaining_pct = usage.get("remaining_percent") if usage else None
+    usage_known = isinstance(used_pct, float)
+    usage_src = usage.get("source") if usage else None
+    usage_err = usage.get("error") if usage else None
+
+    items: list[dict[str, Any]] = []
+
+    def add(kind: str, cid: str, title: str, body: str, severity: str, extra: dict[str, Any] | None = None) -> None:
+        rec = {
+            "key": f"codex-resets:{kind}:{cid}",
+            "kind": kind,
+            "credit_id": cid,
+            "title": title,
+            "body": body,
+            "severity": severity,
+        }
+        if extra:
+            rec.update(extra)
+        items.append(rec)
+
+    for credit in unused:
+        exp = credit_expiry(credit)
+        assert exp is not None
+        cid = credit_id(credit) or iso(exp)
+        hours_left = (exp.astimezone(ET) - now).total_seconds() / 3600
+        when = fmt_et(exp)
+        week_txt, week_reset = weekly_note(usage, exp, now)
+
+        if 0 <= hours_left <= EXPIRING_HOURS:
+            title = f"A Codex usage-limit reset credit expires {when}"
+            body = (
+                f"A Codex ChatGPT usage-limit reset credit expires {when}."
+                " This resets the Codex subscription rate limit (openai/codex), not the OpenAI API balance."
+                + week_txt
+            )
+            add("expiring", cid, title, body, "warn", {"expires_at": iso(exp), "hours_left": round(hours_left, 1)})
+
+        # Drain: unused credit within 7 days and usage is low or unknown.
+        if 0 <= hours_left <= DRAIN_HOURS:
+            near_limit = usage_known and used_pct >= USE_RESET_USED_PCT
+            if not near_limit:
+                if usage_known:
+                    title = f"Drain Codex quota before {when} to use a reset credit"
+                    body = (
+                        f"Codex quota is {used_pct:.0f}% used"
+                        + (f" / {remaining_pct:.0f}% left" if isinstance(remaining_pct, float) else "")
+                        + f" ({usage_src}). Drain it before {when} if you want to use a reset credit then;"
+                        " otherwise that credit may expire unused."
+                        + week_txt
+                    )
+                else:
+                    title = f"Check Codex quota and drain it before {when} if usage is still low"
+                    why = f" Current usage could not be read ({usage_err})." if usage_err else " Current usage is unknown."
+                    body = (
+                        f"A Codex usage-limit reset credit expires {when}.{why}"
+                        " If usage is still low, drain the subscription quota before then so the credit can be used."
+                        + week_txt
+                    )
+                add("drain", cid, title, body, "info", {"expires_at": iso(exp), "hours_left": round(hours_left, 1)})
+            # only one drain item, for the soonest credit
+            break
+
+    # Good time to use a reset: near limit, an unused credit exists.
+    if unused and usage_known and used_pct >= USE_RESET_USED_PCT:
+        soonest = unused[0]
+        exp = credit_expiry(soonest)
+        cid = credit_id(soonest) or (iso(exp) if exp else "unused")
+        when = fmt_et(exp) if exp else "an unknown date"
+        week_txt, week_reset = weekly_note(usage, exp, now)
+        hours_to_weekly = None
+        if week_reset is not None:
+            hours_to_weekly = (week_reset.astimezone(ET) - now).total_seconds() / 3600
+        if hours_to_weekly is not None and 0 <= hours_to_weekly <= WAIT_FOR_WEEKLY_HOURS:
+            title = "Codex is near its limit; weekly window resets soon — consider waiting"
+            body = (
+                f"Codex quota is {used_pct:.0f}% used"
+                + (f" / {remaining_pct:.0f}% left" if isinstance(remaining_pct, float) else "")
+                + f" and an unused reset credit is available (expires {when})."
+                f" The weekly window resets {fmt_et(week_reset)}, in about {hours_to_weekly:.0f} hours;"
+                " consider waiting for that natural reset rather than spending a credit."
+            )
+            add("wait-weekly", cid, title, body, "info", {"expires_at": iso(exp) if exp else None})
+        else:
+            title = "Good time to use a Codex usage-limit reset"
+            body = (
+                f"Codex quota is {used_pct:.0f}% used"
+                + (f" / {remaining_pct:.0f}% left" if isinstance(remaining_pct, float) else "")
+                + f" ({usage_src}) and an unused reset credit is available (expires {when})."
+                " This is a good time to use a reset on the ChatGPT Codex usage page."
+                + week_txt
+            )
+            add("use", cid, title, body, "warn", {"expires_at": iso(exp) if exp else None})
+
+    for credit in expired_today:
+        exp = credit_expiry(credit)
+        cid = credit_id(credit) or iso(exp)
+        add(
+            "expired",
+            cid,
+            f"A Codex usage-limit reset credit expired unused {fmt_et(exp)}",
+            f"A Codex usage-limit reset credit expired unused {fmt_et(exp)}. Mark it used in the state file if it was actually redeemed.",
+            "info",
+            {"expires_at": iso(exp)},
+        )
+
+    return items
+
+
+def render_md(items: list[dict[str, Any]], usage: dict[str, Any] | None, now: datetime, unused_n: int) -> str:
+    lines = [f"# Codex usage-limit resets ({fmt_et(now)})", ""]
+    if usage and usage.get("used_percent") is not None:
+        rem = usage.get("remaining_percent")
+        rem_s = f" / {usage['remaining_percent']:.0f}% left" if isinstance(rem, float) else ""
+        lines.append(
+            f"Current openai/codex usage: {usage['used_percent']:.0f}% used{rem_s}"
+            f" (source: {usage.get('source') or 'unknown'})."
+        )
+        lines.append(f"Unused reset credits on file: {unused_n}.")
+        lines.append("")
+    elif usage and usage.get("error"):
+        lines.append(f"Current openai/codex usage could not be read: {usage['error']}")
+        lines.append(f"Unused reset credits on file: {unused_n}.")
+        lines.append("")
+    else:
+        lines.append(f"Current openai/codex usage is unknown. Unused reset credits on file: {unused_n}.")
+        lines.append("")
+    if not items:
+        lines.append("No Codex reset actions today.")
+        return "\n".join(lines) + "\n"
+    for i, item in enumerate(items, 1):
+        lines.append(f"{i}. **{item['title']}**")
+        lines.append(f"   {item['body']}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+# ---------------------------------------------------------------------------
+# cli
+# ---------------------------------------------------------------------------
+
+
+def run(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--now", help="ISO-8601 clock override (also CODEX_RESETS_NOW)")
+    ap.add_argument("--state", help="path to credits.json")
+    ap.add_argument("--usage-json", help="aiuse or CodexBar JSON snapshot (skip live fetch)")
+    ap.add_argument("--no-live", action="store_true", help="do not call aiuse or codexbar")
+    ap.add_argument("--json", action="store_true", help="machine-readable JSON on stdout")
+    ap.add_argument("--write-state", action="store_true", help="write expired/used status back to the state file")
+    ap.add_argument("--selftest", action="store_true")
+    args = ap.parse_args(argv)
+    if args.selftest:
+        return selftest()
+
+    now = now_from(args.now)
+    state_path = Path(args.state) if args.state else DEFAULT_STATE
+    state = load_state(state_path)
+    usage_path = Path(args.usage_json) if args.usage_json else None
+    usage = discover_usage(usage_path, live=not args.no_live, state=state)
+
+    changed = apply_expired(state, now)
+    avail = usage.get("available_count") if usage else None
+    if maybe_mark_used_from_count(state, avail, now):
+        changed = True
+    if args.write_state and changed:
+        write_state(state_path, state)
+
+    items = build_items(state, usage, now)
+    unused_n = sum(1 for c in state["credits"] if effective_status(c, now) == "unused")
+    payload = {
+        "now": iso(now),
+        "now_et": fmt_et(now),
+        "state": str(state_path),
+        "usage": usage,
+        "unused_credits": unused_n,
+        "items": items,
+        "markdown": render_md(items, usage, now, unused_n),
+    }
+    if args.json:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+    else:
+        sys.stdout.write(payload["markdown"])
+    return 0
+
+
+def selftest() -> int:
+    # Imported tests live in tests/test_codex_resets_check.py; this keeps `codex-resets-check --selftest` useful
+    # when the tests module is on disk next to a checkout.
+    import unittest
+
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parent.parent / "tests" / "test_codex_resets_check.py",
+    ]
+    test_path = next((p for p in candidates if p.is_file()), None)
+    if test_path is None:
+        print("codex-resets-check --selftest: tests/test_codex_resets_check.py not found", file=sys.stderr)
+        return 1
+    loader = unittest.TestLoader()
+    # load by path
+    import importlib.machinery
+    import importlib.util
+
+    name = "test_codex_resets_check"
+    spec = importlib.util.spec_from_file_location(name, test_path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    suite = loader.loadTestsFromModule(mod)
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    return 0 if result.wasSuccessful() else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(run())
+    except BrokenPipeError:
+        sys.exit(0)

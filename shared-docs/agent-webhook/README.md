@@ -9,11 +9,11 @@ Bots (registry, no secrets: ~/.config/agent-webhook/bots.json):
 
 | bot | what it is for | received log |
 |---|---|---|
-| `coding` | Coding bot: coding/TUI/agent-tooling work on the box (acp-run, agy, Claude Code, Cursor, Cline) | coding/received.log |
+| `coding` | Coding bot: coding/TUI/agent-tooling work on the box (peer-link mailbox, agy, Claude Code, Cursor, Cline) | coding/received.log |
 | `project-bot` | Project Bot (repo <ORG>/<PROJECT_REPO>, ~/src/project-bot) | project-bot/received.log |
 | `chief-of-staff` | Chief of Staff "Dashboard dispatch" routine: the Bot Briefs dashboard calls it on Send / Submit all (`-s "Dashboard submit"`) | chief-of-staff/received.log |
 
-- `-r` means you want a reply. The bot answers by starting a new ACP turn (acp-run) in your current working directory.
+- `-r` means you want a reply. The Coding bot answers through a `peer-link` mailbox send (it no longer starts a CLI ACP / acp-run session). Wake-up is still `notify-bot`.
 - `-n` dry run: prints the payload and which env var names would be used; sends nothing.
 - One HTTP POST to the bot's webhook routine, which wakes the bot. The bot decides what to do and whether to tell the operator.
 - Use it when blocked, when a long job finishes, when you find something important, or need a decision. No routine progress chatter.
@@ -27,12 +27,12 @@ They can come from the process environment (box secrets) or from `~/.config/agen
 
 ## Registered agents
 
-| `-f` value | Models seen | Bot's reply command |
+| `-f` value | Models seen | Bot's reply path |
 |---|---|---|
-| claude | (Claude models) | `acp-run claude -C <cwd> -p ...` |
-| agy | gemini-3.8-flash | `acp-run agy -C <cwd> -p ...` |
-| cline | claude-sonnet-4.5, deepseek-v4.1-flash | `acp-run cline -C <cwd> -p ...` |
-| cursor | composer-2.5 | `acp-run cursor --model composer-2.5 -C <cwd> -p ...` (runs `cursor-agent acp`) |
+| claude | (Claude models) | `peer-link --comm <mailbox-comm-dir> send --from coding --to claude --subject "<subject>" --file <body.md>` (body via quoted heredoc; plain `send`, not `--publish`, unless the mailbox clone is clean). |
+| agy | gemini-3.8-flash | No peer-link role / mailbox yet; do not invent a `--to`. |
+| cline | claude-sonnet-4.5, deepseek-v4.1-flash | No peer-link role / mailbox yet; do not invent a `--to`. |
+| cursor | composer-2.5 | No peer-link role / mailbox yet; do not invent a `--to`. |
 
 ## received.log format
 

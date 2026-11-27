@@ -1,6 +1,8 @@
 # Coding bot: box coding / TUI setup (paths only, no secrets)
 
-> **Routing rule (operator, 2026-11-11):** do all AI work with the box's own assistant bot. acp-run agents (agy, Claude, cursor, cline, Codex) are fallback only, when the chief-of-staff bot says the bot's usage is over pace. Token-saving scan timing still applies.
+> **DEPRECATED (2026-11-26):** This acp-run setup is superseded by `peer-link` (operator ruling 2026-11-26). `acp-run` was removed from the box (`~/.local/bin/acp-run` and `~/.local/share/acp-run` are gone). Do not spawn CLI agent sessions from agent-webhook; Coding-bot mailbox replies use `peer-link`. `notify-bot coding` remains the wake-up path. Leftovers (`~/.config/acp-run.env`, `~/.local/bin/acp-dispatch`) were left untouched.
+
+> **Routing rule (operator, 2026-11-11):** do all AI work with the box's own assistant bot. acp-run agents (agy, Claude, cursor, cline, Codex) are fallback only, when the chief-of-staff bot says the bot's usage is over pace. Token-saving scan timing still applies. The acp-run fallback path is no longer installed on this box.
 
 Collected 2026-10-14 from the box (Project Bot / One-offs work). Coding bot agent id <AGENT_ID>.
 

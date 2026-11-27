@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""coding-gather: deterministic data gathering for Coding's daily brief (--bot coding).
+
+Python 3 stdlib only; no model calls. Combines:
+
+  * Codex usage-limit reset credits (bin/codex-resets-check)
+  * paid aiuse pools significantly under pace that reset soon (bin/aiuse-underpace-check)
+  * the latest Free Software GitHub poll (~/.local/state/fs-poller/latest.json), if present
+  * open Bot Briefs items (`brief items --bot coding --open --json`), if the CLI is available
+
+    coding-gather [--now ISO] [--date YYYY-MM-DD] [-o FILE] [--json] [--no-live]
+                  [--usage-json FILE] [--aiuse-json FILE] [--no-underpace]
+                  [--no-brief-items] [--no-fs-poller] [--selftest]
+
+Writes stdout and optional -o FILE. Live runs also write
+~/.local/state/coding-gather/YYYY-MM-DD.json and .md, plus latest.json / latest.md
+(skipped for --as-of-style --now unless --write-state).
+
+Add this script (or `codex-resets-check`) to the Coding daily brief routine's
+script inputs so the items appear in the published brief. Do not create a
+separate routine for the credit reminders.
+
+Do not put personal expiry dates in a public repo.
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
+HOME = Path.home()
+STATE_DIR = Path(os.environ.get("CODING_GATHER_STATE", HOME / ".local/state/coding-gather"))
+FS_LATEST = Path(os.environ.get("FS_POLLER_LATEST", HOME / ".local/state/fs-poller/latest.json"))
+BRIEF = os.environ.get("BRIEF_CLI", "/home/box/bin/brief")
+
+
+def _load_checker():
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parent / "codex-resets-check",
+        HOME / "bin/codex-resets-check",
+        HOME / ".local/bin/codex-resets-check",
+    ]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        raise SystemExit("coding-gather: codex-resets-check not found")
+    loader = importlib.machinery.SourceFileLoader("codex_resets_check", str(path))
+    spec = importlib.util.spec_from_loader("codex_resets_check", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def _load_underpace():
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parent / "aiuse-underpace-check",
+        HOME / "bin/aiuse-underpace-check",
+        HOME / ".local/bin/aiuse-underpace-check",
+    ]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        return None
+    loader = importlib.machinery.SourceFileLoader("aiuse_underpace_check", str(path))
+    spec = importlib.util.spec_from_loader("aiuse_underpace_check", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def underpace_payload(now: datetime, aiuse_json: str | None, live: bool) -> dict[str, Any]:
+    """Run the under-pace check. Live aiuse only when live; otherwise needs --aiuse-json."""
+    mod = _load_underpace()
+    if mod is None:
+        return {"items": [], "markdown": "", "error": "aiuse-underpace-check not found"}
+    if not aiuse_json and not live:
+        return {"items": [], "markdown": "", "error": "skipped (--no-live and no --aiuse-json)"}
+    try:
+        data = mod.load_usage_data(aiuse_json)
+        thresholds = mod.load_config(None)
+    except Exception as e:  # noqa: BLE001 - surface as a brief note, never crash the gather
+        return {"items": [], "markdown": "", "error": str(e)[:400]}
+    items = mod.evaluate(data, now, thresholds)
+    return {
+        "items": items,
+        "thresholds": thresholds,
+        "markdown": mod.render_markdown(items, now, thresholds),
+        "error": None,
+    }
+
+
+def parse_now(arg: str | None) -> datetime:
+    crc = _load_checker()
+    return crc.now_from(arg)
+
+
+def brief_open_items() -> tuple[list[dict[str, Any]], str | None]:
+    exe = BRIEF if os.path.isfile(BRIEF) else shutil.which("brief")
+    if not exe:
+        return [], "brief CLI not found"
+    try:
+        p = subprocess.run(
+            [exe, "items", "--bot", "coding", "--open", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return [], str(e)
+    if p.returncode != 0:
+        return [], (p.stderr or p.stdout or f"brief exited {p.returncode}")[:400]
+    try:
+        data = json.loads(p.stdout or "[]")
+    except json.JSONDecodeError as e:
+        return [], f"brief items JSON: {e}"
+    if isinstance(data, list):
+        return data, None
+    if isinstance(data, dict):
+        items = data.get("items") or data.get("open") or []
+        return items if isinstance(items, list) else [], None
+    return [], "unexpected brief items shape"
+
+
+def fs_poller_payload() -> dict[str, Any] | None:
+    if not FS_LATEST.is_file():
+        return None
+    try:
+        data = json.loads(FS_LATEST.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    md = FS_LATEST.with_suffix(".md")
+    # latest.json -> 2026-11-25.json, md is sibling 2026-11-25.md
+    md_text = None
+    if md.is_file():
+        md_text = md.read_text()
+    else:
+        # resolve symlink target.md
+        try:
+            target = FS_LATEST.resolve().with_suffix(".md")
+            if target.is_file():
+                md_text = target.read_text()
+        except OSError:
+            pass
+    return {"path": str(FS_LATEST), "data": data, "markdown": md_text}
+
+
+def render(
+    now: datetime,
+    resets: dict[str, Any],
+    fs: dict[str, Any] | None,
+    brief_items: list,
+    brief_err: str | None,
+    underpace: dict[str, Any] | None = None,
+) -> str:
+    lines = [f"# Coding daily gather ({resets.get('now_et') or now.isoformat()})", ""]
+    lines.append("## Codex usage-limit resets")
+    lines.append("")
+    md = (resets.get("markdown") or "").strip()
+    # drop the checker's own h1
+    body = "\n".join(md.splitlines()[1:]).strip() if md.startswith("# ") else md
+    lines.append(body or "No Codex reset actions today.")
+    lines.append("")
+    if underpace is not None:
+        lines.append("## Paid pools under pace, resetting soon (aiuse)")
+        lines.append("")
+        umd = (underpace.get("markdown") or "").strip()
+        ubody = "\n".join(umd.splitlines()[1:]).strip() if umd.startswith("# ") else umd
+        if underpace.get("error"):
+            lines.append(f"aiuse under-pace check not run: {underpace['error']}")
+        else:
+            lines.append(ubody or "No paid pools are significantly under pace and resetting soon.")
+        lines.append("")
+    lines.append("## Free Software (fs-poller)")
+    lines.append("")
+    if fs and fs.get("markdown"):
+        lines.append(fs["markdown"].strip())
+    elif fs:
+        lines.append(f"fs-poller snapshot present at {fs.get('path')} (no markdown).")
+    else:
+        lines.append("No fs-poller latest.json on this box.")
+    lines.append("")
+    lines.append("## Open Bot Briefs items (`brief items --bot coding`)")
+    lines.append("")
+    if brief_err:
+        lines.append(f"brief items not loaded: {brief_err}")
+    elif not brief_items:
+        lines.append("No open dashboard items.")
+    else:
+        for it in brief_items:
+            if isinstance(it, dict):
+                key = it.get("key") or it.get("item_key") or ""
+                title = it.get("title") or it.get("item_title") or key
+                lines.append(f"- {title}" + (f" (`{key}`)" if key and key != title else ""))
+            else:
+                lines.append(f"- {it}")
+    lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def run(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--now", help="ISO-8601 clock override (passed to codex-resets-check)")
+    ap.add_argument("--date", help="YYYY-MM-DD; treated as that day 08:00 ET")
+    ap.add_argument("-o", help="write JSON or markdown here (follows --json)")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--no-live", action="store_true")
+    ap.add_argument("--usage-json")
+    ap.add_argument("--aiuse-json", help="aiuse --json snapshot for the under-pace check (default: run aiuse live)")
+    ap.add_argument("--no-underpace", action="store_true", help="skip the aiuse under-pace check")
+    ap.add_argument("--no-brief-items", action="store_true")
+    ap.add_argument("--no-fs-poller", action="store_true")
+    ap.add_argument("--write-state", action="store_true", help="write ~/.local/state/coding-gather snapshot even with --now")
+    ap.add_argument("--selftest", action="store_true")
+    args = ap.parse_args(argv)
+    if args.selftest:
+        from pathlib import Path as P
+        import unittest
+
+        test = P(__file__).resolve().parent.parent / "tests" / "test_codex_resets_check.py"
+        if not test.is_file():
+            print("coding-gather --selftest: tests not found", file=sys.stderr)
+            return 1
+        return unittest.main(module=None, argv=["unittest", str(test)], exit=False).result.wasSuccessful() and 0 or 1
+
+    now_arg = args.now
+    if args.date and not now_arg:
+        now_arg = f"{args.date}T08:00:00-05:00"
+    crc = _load_checker()
+    now = crc.now_from(now_arg)
+
+    check_argv = ["--json", "--no-live"] if args.no_live else ["--json"]
+    if now_arg:
+        check_argv += ["--now", now_arg]
+    if args.usage_json:
+        check_argv += ["--usage-json", args.usage_json]
+        if "--no-live" not in check_argv:
+            check_argv.append("--no-live")
+    buf_out = io_capture = None
+    import io
+    from contextlib import redirect_stdout
+
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        rc = crc.run(check_argv)
+    if rc not in (0,):
+        print(f"coding-gather: codex-resets-check exited {rc}", file=sys.stderr)
+    resets = json.loads(captured.getvalue() or "{}")
+
+    fs = None if args.no_fs_poller else fs_poller_payload()
+    brief_items, brief_err = ([], None) if args.no_brief_items else brief_open_items()
+    underpace = None if args.no_underpace else underpace_payload(now, args.aiuse_json, live=not args.no_live)
+    markdown = render(now, resets, fs, brief_items, brief_err, underpace)
+    items = list(resets.get("items") or [])
+    if underpace:
+        items += list(underpace.get("items") or [])
+    payload = {
+        "bot": "coding",
+        "now": resets.get("now") or crc.iso(now),
+        "now_et": resets.get("now_et") or crc.fmt_et(now),
+        "codex_resets": resets,
+        "aiuse_underpace": underpace,
+        "fs_poller": None
+        if not fs
+        else {"path": fs["path"], "markdown_included": bool(fs.get("markdown"))},
+        "brief_items": brief_items,
+        "brief_items_error": brief_err,
+        "items": items,
+        "markdown": markdown,
+    }
+
+    # Write state on live (no --now) or when asked.
+    write = args.write_state or (not now_arg)
+    if write:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        day = now.astimezone(ET).date().isoformat()
+        jp = STATE_DIR / f"{day}.json"
+        mp = STATE_DIR / f"{day}.md"
+        jp.write_text(json.dumps(payload, indent=2) + "\n")
+        mp.write_text(markdown)
+        for name, target in (("latest.json", jp.name), ("latest.md", mp.name)):
+            link = STATE_DIR / name
+            link.unlink(missing_ok=True)
+            link.symlink_to(target)
+
+    text = json.dumps(payload, indent=2) + "\n" if args.json else markdown
+    sys.stdout.write(text)
+    if args.o:
+        Path(args.o).write_text(text)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(run())
+    except BrokenPipeError:
+        sys.exit(0)

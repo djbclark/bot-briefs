@@ -2,10 +2,15 @@
 # repo-sync: nightly, non-destructive sync of the box's GitHub/forgejo clones.
 # Never resets, cleans, stashes, rebases or pushes. Only fast-forwards.
 # Snapshots uncommitted work to ~/repo-sync-backups before touching anything.
+# Prunes dated auto-snapshots (YYYY-MM-DD_HHMM) older than retention-days (default 14);
+# never deletes manual-* directories or *.bundle files. Override with
+# ~/.config/repo-sync/retention-days or REPO_SYNC_RETENTION_DAYS.
 # Prints a machine-readable report; exit 0 even when repos need attention.
 set -uo pipefail
 ROOTS=(${REPO_SYNC_ROOTS:-$HOME/src /workspace $HOME/.hermes})
-BK="$HOME/repo-sync-backups/$(date +%Y-%m-%d_%H%M)"
+BACKUP_ROOT="${REPO_SYNC_BACKUP_DIR:-$HOME/repo-sync-backups}"
+BK="$BACKUP_ROOT/$(date +%Y-%m-%d_%H%M)"
+RETENTION_FILE="${REPO_SYNC_RETENTION_FILE:-$HOME/.config/repo-sync/retention-days}"
 SMOKE="$HOME/.config/repo-sync/smoke.d"
 TEST_TIMEOUT="${REPO_SYNC_TEST_TIMEOUT:-900}"
 # Tests run ONLY for repos listed here (repos you own). One entry per line: an absolute repo
@@ -27,6 +32,90 @@ gitr() { # git with the right one-off auth for this repo's origin
     git -C "$d" "$@"
   fi
 }
+
+# Retention: dated auto-snapshots only. Never prune manual-* or *.bundle.
+read_retention_days() {
+  local raw="${REPO_SYNC_RETENTION_DAYS:-}"
+  if [ -z "$raw" ] && [ -f "$RETENTION_FILE" ]; then
+    raw=$(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$RETENTION_FILE" | sed -n '/./{p;q;}')
+  fi
+  if [ -z "$raw" ]; then
+    printf '%s\n' 14
+    return
+  fi
+  if [[ "$raw" =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s\n' "$raw"
+  else
+    echo "retention: invalid value ${raw@Q}; using default 14" >&2
+    printf '%s\n' 14
+  fi
+}
+
+snapshot_cutoff() { # $1 days -> YYYY-MM-DD
+  local days="$1"
+  if [ -n "${REPO_SYNC_TODAY:-}" ]; then
+    date -d "${REPO_SYNC_TODAY} - ${days} days" +%F
+  else
+    date -d "${days} days ago" +%F
+  fi
+}
+
+is_dated_auto_snapshot() { # $1 basename
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}$ ]]
+}
+
+prune_dated_snapshots() { # $1 backup root, $2 days, $3 dry|live
+  local root="$1" days="$2" mode="${3:-live}"
+  local cutoff name p size=0 count=0
+  local -a victims=()
+  cutoff=$(snapshot_cutoff "$days")
+  if [ ! -d "$root" ]; then
+    echo "pruned: none (no $root; retention ${days} days, cutoff $cutoff)"
+    return 0
+  fi
+  while IFS= read -r -d '' p; do
+    name=$(basename "$p")
+    [[ "$name" == manual-* ]] && continue
+    [[ "$name" == *.bundle ]] && continue
+    [ -d "$p" ] || continue
+    is_dated_auto_snapshot "$name" || continue
+    if [[ "${name%%_*}" < "$cutoff" ]]; then
+      victims+=("$p")
+    fi
+  done < <(find "$root" -mindepth 1 -maxdepth 1 -print0)
+  count=${#victims[@]}
+  if [ "$count" -eq 0 ]; then
+    echo "pruned: none (retention ${days} days, cutoff $cutoff)"
+    return 0
+  fi
+  local sz
+  for p in "${victims[@]}"; do
+    sz=$(du -sb "$p" | awk '{print $1}')
+    size=$((size + sz))
+  done
+  if [ "$mode" = dry ]; then
+    echo "pruned: would delete $count snapshots older than ${days} days (cutoff $cutoff, $size bytes):"
+    for p in "${victims[@]}"; do
+      printf '  %s\n' "$(basename "$p")"
+    done
+    return 0
+  fi
+  for p in "${victims[@]}"; do
+    rm -rf -- "$p"
+  done
+  echo "pruned: $count snapshots older than ${days} days (cutoff $cutoff, freed $size bytes)"
+}
+
+# `repo-sync prune` / `repo-sync prune-dry-run` run retention only, not the nightly sync.
+if [[ "${1:-}" == prune || "${1:-}" == prune-dry-run ]]; then
+  days=$(read_retention_days)
+  mode=live
+  [[ "$1" == prune-dry-run ]] && mode=dry
+  echo "=== BACKUPS ${BACKUP_ROOT} (prune only, retention ${days} days)"
+  prune_dated_snapshots "$BACKUP_ROOT" "$days" "$mode"
+  exit 0
+fi
+
 
 test_allowed() { # $1 repo dir, $2 origin url
   [ -r "$TEST_ALLOWLIST" ] || return 1
@@ -111,6 +200,6 @@ for d in "${REPOS[@]}"; do
   else echo "updated: no"; fi
 done
 echo "=== BACKUPS $BK"
-# prune snapshots older than 60 days
-find "$HOME/repo-sync-backups" -mindepth 1 -maxdepth 1 -type d -mtime +60 -exec rm -rf {} + 2>/dev/null
+days=$(read_retention_days)
+prune_dated_snapshots "$BACKUP_ROOT" "$days" live
 exit 0
