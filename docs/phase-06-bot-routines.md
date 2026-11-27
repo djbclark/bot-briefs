@@ -16,7 +16,7 @@
 ```text
 Grok-Bot-specific: each bot creates its own routine with UpdateRoutine in its own main chat (subagents cannot change
 routines or memory). Ask the bot: "create a daily routine at 3:14 AM <tz> with this prompt". Cron `14 3 * * *` or `14 3 * * 1-5`.
-Each run: brief inbox + ack -> gather -> write report md -> items.json with stable keys -> brief publish -> post to chat with
+Each run: brief inbox + ack -> gather (Coding: `/home/box/bin/coding-gather`, which includes `codex-resets-check` and the fs-poller snapshot) -> write report md -> items.json with stable keys -> brief publish -> post to chat with
 dashboard link, ending with the ref-append Ref line. Silent only if nothing new AND nothing open.
 Templates: examples/routines/templates.md. Real stored example: examples/routines/zero-gmail-triage.md. Other bots' exact routine
 prompts were not available locally; build them from the template + the bot description.
